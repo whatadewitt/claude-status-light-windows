@@ -18,7 +18,7 @@ public sealed record HookPayload(
         if (string.IsNullOrWhiteSpace(json)) return empty;
         try
         {
-            using var doc = JsonDocument.Parse(json);
+            using var doc = JsonDocument.Parse(json, new JsonDocumentOptions { MaxDepth = 4096 });
             var root = doc.RootElement;
             if (root.ValueKind != JsonValueKind.Object) return empty;
             return new HookPayload(

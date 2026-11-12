@@ -6,6 +6,9 @@ public sealed class HookRunner(
     Func<DateTimeOffset> clock,
     Func<string> markerName)
 {
+    public static string DefaultMarkerName() =>
+        $"{Environment.ProcessId}.{DateTimeOffset.UtcNow.ToUnixTimeSeconds()}";
+
     public void Run(string stateArg, string payloadJson, string fallbackCwd)
     {
         var p = HookPayload.Parse(payloadJson);

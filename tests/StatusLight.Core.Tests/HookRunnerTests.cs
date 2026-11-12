@@ -8,7 +8,7 @@ public sealed class HookRunnerTests : IDisposable
     private readonly string _root = Path.Combine(Path.GetTempPath(), "slhook-" + Guid.NewGuid().ToString("N"));
     private string Sessions => Path.Combine(_root, "sessions");
     private int _marker;
-    private ProcessIdentity _identity = new(100, 5, "WindowsTerminal", "wt:abc", 0);
+    private ProcessIdentity _identity = new(100, 5, "WindowsTerminal", "wt:abc", 77);
     private DateTimeOffset _now = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
 
     public void Dispose()
@@ -155,6 +155,7 @@ public sealed class HookRunnerTests : IDisposable
         Assert.Equal(5, r.PidStart);
         Assert.Equal("wt:abc", r.Tty);
         Assert.Equal("WindowsTerminal", r.TermProgram);
+        Assert.Equal(77, r.Hwnd);
     }
 
     [Fact]
@@ -274,6 +275,22 @@ public sealed class HookRunnerTests : IDisposable
         Assert.Null(p.SessionId);
         Assert.Equal("/x", p.Cwd);
         Assert.Null(p.Message);
+    }
+
+    [Fact]
+    public void Default_marker_name_is_pid_dot_epoch()
+    {
+        var m = System.Text.RegularExpressions.Regex.Match(HookRunner.DefaultMarkerName(), @"^(\d+)\.(\d+)$");
+        Assert.True(m.Success);
+        Assert.Equal(Environment.ProcessId.ToString(), m.Groups[1].Value);
+    }
+
+    [Fact]
+    public void Deeply_nested_payload_still_yields_session_id()
+    {
+        var deep = new string('[', 200) + new string(']', 200);
+        var p = HookPayload.Parse("{\"session_id\":\"deep\",\"tool_input\":" + deep + "}");
+        Assert.Equal("deep", p.SessionId);
     }
 
     [Fact]
