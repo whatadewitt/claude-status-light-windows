@@ -23,4 +23,5 @@ jobs:
         with:
           dotnet-version: 10.x
       - run: dotnet build StatusLight.slnx -c Release
+      - run: dotnet publish src/StatusLight.Hook -c Release -r win-x64
       - run: dotnet test StatusLight.slnx -c Release
