@@ -43,7 +43,9 @@ public sealed class IconCache : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         RefreshCustom();
         var frames = Mascot.Frames.Count;
-        var key = new Key(s, side, ((frame % frames) + frames) % frames, Math.Clamp(agents, 0, 9), _customStamp);
+        // A custom icon doesn't dance, so every frame shares one entry.
+        var frameKey = _custom is null ? ((frame % frames) + frames) % frames : 0;
+        var key = new Key(s, side, frameKey, Math.Clamp(agents, 0, 9), _customStamp);
 
         if (_map.TryGetValue(key, out var hit))
         {
@@ -58,7 +60,8 @@ public sealed class IconCache : IDisposable
         var icon = Icon.FromHandle(handle); // does not own the handle; we destroy it
         _map[key] = _lru.AddFirst(new Entry(key, icon, handle));
 
-        while (_map.Count > _capacity) Evict(_lru.Last!);
+        // Never evict the entry just returned (the head), even if capacity were 1.
+        while (_map.Count > _capacity && _lru.Last != _lru.First) Evict(_lru.Last!);
         return icon;
     }
 

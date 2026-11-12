@@ -30,5 +30,9 @@ public sealed class IconCacheTests
             Assert.True(Win32.GetGuiResources(me.Handle, Win32.GR_GDIOBJECTS) <= gdiBaseline + 200);
             Assert.True(Win32.GetGuiResources(me.Handle, Win32.GR_USEROBJECTS) <= userBaseline + 200);
         }
+
+        // Dispose destroys every cached HICON.
+        Assert.True(Win32.GetGuiResources(me.Handle, Win32.GR_GDIOBJECTS) <= gdiBaseline + 20);
+        Assert.True(Win32.GetGuiResources(me.Handle, Win32.GR_USEROBJECTS) <= userBaseline + 20);
     }
 }

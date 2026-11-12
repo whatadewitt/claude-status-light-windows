@@ -44,7 +44,10 @@ public sealed class AppHost : IDisposable
 
         var local = new LocalWindowsSource(new SessionDirectoryReader(
             SessionsDir, SessionOrigin.Windows, null, new WindowsProcessTable(), p => p));
-        var wsl = new WslSessionSource(new WslCommandRunner(), d => $@"\\wsl.localhost\{d}", WslMinInterval);
+        // WSL reads may block on 9P IO: refresh them in the background so the native light never waits.
+        var wsl = new BackgroundRefreshSource(
+            new WslSessionSource(new WslCommandRunner(), d => $@"\\wsl.localhost\{d}", WslMinInterval),
+            () => _dispatcher.BeginInvoke(RequestPoll));
         _monitor = new SessionMonitor([local, wsl], () => _settings.GreenBeatsYellow);
 
         _pollTimer = NewTimer(PollInterval, RequestPoll);
@@ -55,8 +58,8 @@ public sealed class AppHost : IDisposable
         });
         _danceTimer = NewTimer(DanceInterval, () =>
         {
-            _dance.Tick();
-            Updated?.Invoke(Current);
+            try { _dance.Tick(); } catch (Exception) { }
+            RaiseUpdated();
         });
     }
 
@@ -89,10 +92,11 @@ public sealed class AppHost : IDisposable
     }
 
     /// <summary>
-    /// Runs one poll on the thread pool (WSL polls may block on 9P IO). Polls never overlap:
-    /// the sources' caches are not thread-safe. A request during a poll queues exactly one
-    /// follow-up so a file change seen mid-poll is not lost. Called on the UI thread only, so the
-    /// flags need no locking and the await resumes on the dispatcher.
+    /// Runs one poll on the thread pool. Polls never overlap: the sources' caches are not
+    /// thread-safe (WSL refreshes run separately inside <see cref="BackgroundRefreshSource"/>).
+    /// A request during a poll queues exactly one follow-up so a file change seen mid-poll is not
+    /// lost. Called on the UI thread only, so the flags need no locking and the await resumes on
+    /// the dispatcher.
     /// </summary>
     private async void RequestPoll()
     {
@@ -141,7 +145,19 @@ public sealed class AppHost : IDisposable
             _danceTimer.Stop();
             _dance.Reset();
         }
-        Updated?.Invoke(snapshot);
+        RaiseUpdated();
+    }
+
+    /// <summary>A failing subscriber must not stop polling or the dance.</summary>
+    private void RaiseUpdated()
+    {
+        try
+        {
+            Updated?.Invoke(Current);
+        }
+        catch (Exception)
+        {
+        }
     }
 
     private DispatcherTimer NewTimer(TimeSpan interval, Action tick)

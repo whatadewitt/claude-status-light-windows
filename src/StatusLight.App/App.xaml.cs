@@ -33,6 +33,9 @@ public partial class App : Application
             return;
         }
 
+        // A tray app has no window to show an error in; never let one exception make the light vanish.
+        DispatcherUnhandledException += (_, args) => args.Handled = true;
+
         var store = new SettingsStore(SettingsPath);
         _host = new AppHost(store, Dispatcher);
         _icons = new IconCache();
