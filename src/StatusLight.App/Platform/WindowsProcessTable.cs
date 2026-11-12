@@ -9,21 +9,26 @@ namespace StatusLight.App.Platform;
 public sealed partial class WindowsProcessTable : IProcessTable
 {
     private const uint ProcessQueryLimitedInformation = 0x1000;
-    private const int ErrorAccessDenied = 5;
+    private const int ErrorInvalidParameter = 87;
+    private const uint StillActive = 259;
 
     public unsafe ProcessLiveness Check(int pid, long pidStart)
     {
         var handle = OpenProcess(ProcessQueryLimitedInformation, 0, (uint)pid);
         if (handle == 0)
-            return Marshal.GetLastWin32Error() == ErrorAccessDenied ? ProcessLiveness.Unknown : ProcessLiveness.Dead;
+            // Only "no such pid" proves death; access denied or anything else is unknown.
+            return Marshal.GetLastWin32Error() == ErrorInvalidParameter ? ProcessLiveness.Dead : ProcessLiveness.Unknown;
         try
         {
-            long creation, exit, kernel, user;
-            if (GetProcessTimes(handle, &creation, &exit, &kernel, &user) == 0)
-                return ProcessLiveness.Unknown;
-            // An exited process whose handle is still obtainable has a non-zero exit time.
-            if (exit != 0) return ProcessLiveness.Dead;
-            if (pidStart != 0 && creation != pidStart) return ProcessLiveness.Dead;
+            if (GetExitCodeProcess(handle, out var code) == 0) return ProcessLiveness.Unknown;
+            if (code != StillActive) return ProcessLiveness.Dead;
+            if (pidStart != 0)
+            {
+                long creation, exit, kernel, user;
+                if (GetProcessTimes(handle, &creation, &exit, &kernel, &user) == 0)
+                    return ProcessLiveness.Unknown;
+                if (creation != pidStart) return ProcessLiveness.Dead;
+            }
             return ProcessLiveness.Alive;
         }
         finally
@@ -59,6 +64,9 @@ public sealed partial class WindowsProcessTable : IProcessTable
 
     [LibraryImport("kernel32.dll")]
     private static unsafe partial int GetProcessTimes(nint h, long* creation, long* exit, long* kernel, long* user);
+
+    [LibraryImport("kernel32.dll", SetLastError = true)]
+    private static partial int GetExitCodeProcess(nint h, out uint code);
 
     [LibraryImport("kernel32.dll")]
     private static partial int CloseHandle(nint h);

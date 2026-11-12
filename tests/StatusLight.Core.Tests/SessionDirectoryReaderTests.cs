@@ -95,14 +95,14 @@ public sealed class SessionDirectoryReaderTests : IDisposable
         t.Starts[42] = 1;
         t.Children[42] =
         [
-            @"cmd /c ""echo .claude\shell-snapshots\snapshot-x && eval 'ping -n 5 127.0.0.1'""",
+            @"bash -c ""source C:\u\.claude\shell-snapshots\snapshot-x.sh && eval 'ls -la' < /dev/null""",
             "notepad.exe",
         ];
         Write("a", "idle", 42);
 
         var s = Assert.Single(Reader(t).Read(Now));
         Assert.Equal(LightState.Working, s.State);
-        Assert.Single(s.Shells);
+        Assert.Equal(["ls -la"], s.Shells);
     }
 
     [Fact]
@@ -138,5 +138,72 @@ public sealed class SessionDirectoryReaderTests : IDisposable
         File.WriteAllText(Path.Combine(agents, "g2"), "");
 
         Assert.Equal(2, Assert.Single(Reader(t).Read(Now)).Agents);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(1)]
+    public void Pid_zero_or_one_means_no_pid_and_fresh_session_kept(int pid)
+    {
+        Write("a", "idle", pid);
+
+        var s = Assert.Single(Reader(new FakeTable()).Read(Now));
+        Assert.Null(s.Pid);
+    }
+
+    [Fact]
+    public void Invalid_state_with_live_pid_skipped_and_kept()
+    {
+        var t = new FakeTable();
+        t.Starts[42] = 1;
+        var path = Write("a", "bogus", 42);
+
+        Assert.Empty(Reader(t).Read(Now));
+        Assert.True(File.Exists(path));
+    }
+
+    [Fact]
+    public void Invalid_state_with_dead_pid_is_cleaned_up()
+    {
+        var path = Write("a", "bogus", 42);
+
+        Assert.Empty(Reader(new FakeTable()).Read(Now));
+        Assert.False(File.Exists(path));
+    }
+
+    [Fact]
+    public void Id_falls_back_to_file_name()
+    {
+        File.WriteAllText(Path.Combine(_dir, "from-name.json"),
+            $$"""{"state":"idle","pid":0,"updated_at":{{Now.ToUnixTimeSeconds()}}}""");
+
+        Assert.Equal("from-name", Assert.Single(Reader(new FakeTable()).Read(Now)).SessionId);
+    }
+
+    [Fact]
+    public void Transcript_path_is_mapped_before_title_lookup()
+    {
+        var transcript = Path.Combine(_dir, "real-transcript.jsonl");
+        File.WriteAllText(transcript, "{\"type\":\"ai-title\",\"aiTitle\":\"Mapped title\"}\n");
+        File.WriteAllText(Path.Combine(_dir, "a.json"),
+            $$"""{"state":"idle","session_id":"a","pid":0,"transcript_path":"/linux/path.jsonl","updated_at":{{Now.ToUnixTimeSeconds()}}}""");
+        var reader = new SessionDirectoryReader(_dir, SessionOrigin.Wsl, "Ubuntu", new FakeTable(),
+            p => p == "/linux/path.jsonl" ? transcript : "");
+
+        var s = Assert.Single(reader.Read(Now));
+        Assert.Equal("Mapped title", s.Title);
+        Assert.Equal("Ubuntu", s.Distro);
+        Assert.Equal(SessionOrigin.Wsl, s.Origin);
+    }
+
+    [Fact]
+    public void Sorted_by_updated_at_descending()
+    {
+        var n = Now.ToUnixTimeSeconds();
+        Write("old", "idle", 0, updated: n - 100);
+        Write("new", "idle", 0, updated: n);
+        Write("mid", "idle", 0, updated: n - 50);
+
+        Assert.Equal(["new", "mid", "old"], Reader(new FakeTable()).Read(Now).Select(s => s.SessionId));
     }
 }

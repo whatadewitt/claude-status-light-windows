@@ -39,7 +39,7 @@ public sealed class WindowsProcessTableTests
     {
         var psi = new ProcessStartInfo("cmd.exe")
         {
-            Arguments = @"/c ""echo .claude\shell-snapshots\snapshot-x && eval 'ping -n 5 127.0.0.1'""",
+            Arguments = @"/c ""echo .claude\shell-snapshots\snapshot-x && ping -n 5 127.0.0.1""",
             CreateNoWindow = true,
         };
         using var child = Process.Start(psi)!;

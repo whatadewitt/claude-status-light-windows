@@ -33,8 +33,6 @@ public sealed class SessionDirectoryReader(
         {
             var record = SessionFiles.TryRead(file);
             if (record is null) continue;
-            if (!LightStates.TryParse(record.State, out var state)) continue;
-
             var stem = file[..^".json".Length];
             var agentsDir = stem + ".agents";
             var id = record.SessionId.Length > 0 ? record.SessionId : Path.GetFileNameWithoutExtension(file);
@@ -53,6 +51,9 @@ public sealed class SessionDirectoryReader(
             {
                 continue;
             }
+
+            // Liveness first so a dead session is cleaned up even with an unrecognized state.
+            if (!LightStates.TryParse(record.State, out var state)) continue;
 
             IReadOnlyList<string> shells = [];
             if (state == LightState.Idle && pid is { } sp)
