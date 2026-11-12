@@ -51,5 +51,6 @@ public sealed class WslCommandRunner : ICommandRunner
 
     // WSL_UTF8=1 makes wsl.exe emit UTF-8; older builds still emit UTF-16LE (bytes contain NULs).
     private static string Decode(byte[] bytes)
-        => Array.IndexOf(bytes, (byte)0) >= 0 ? Encoding.Unicode.GetString(bytes) : Encoding.UTF8.GetString(bytes);
+        => (Array.IndexOf(bytes, (byte)0) >= 0 ? Encoding.Unicode.GetString(bytes) : Encoding.UTF8.GetString(bytes))
+            .TrimStart('\uFEFF');
 }

@@ -8,12 +8,13 @@ public sealed class SessionDirectoryReader(
     SessionOrigin origin,
     string? distro,
     IProcessTable processes,
-    Func<string, string> mapTranscriptPath)
+    Func<string, string> mapTranscriptPath,
+    TranscriptTitleCache? titles = null)
 {
     private static readonly TimeSpan PidlessMaxAge = TimeSpan.FromHours(12);
 
     // TranscriptTitleCache is not thread-safe; polls never overlap, so one instance is fine.
-    private readonly TranscriptTitleCache _titles = new();
+    private readonly TranscriptTitleCache _titles = titles ?? new();
 
     public IReadOnlyList<SessionState> Read(DateTimeOffset now)
     {

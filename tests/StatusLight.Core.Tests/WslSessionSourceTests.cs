@@ -16,14 +16,17 @@ public sealed class WslSessionSourceTests : IDisposable
         public string Running { get; set; } = "";
         public string Home { get; set; } = "/home/u";
         public string Ps { get; set; } = "";
+        public int ListExit { get; set; }
+        public int HomeExit { get; set; }
+        public int PsExit { get; set; }
 
         public CommandResult Run(IReadOnlyList<string> args, TimeSpan timeout)
         {
             var joined = string.Join(' ', args);
             Calls.Add(joined);
-            if (joined == "-l --running -q") return new(0, Running);
-            if (joined.Contains("printf")) return new(0, Home);
-            if (joined.Contains(" ps ")) return new(0, Ps);
+            if (joined == "-l --running -q") return new(ListExit, Running);
+            if (joined.Contains("printf")) return new(HomeExit, Home);
+            if (joined.Contains(" ps ")) return new(PsExit, Ps);
             return new(1, "");
         }
     }
@@ -129,5 +132,104 @@ public sealed class WslSessionSourceTests : IDisposable
         var second = src.Poll(Now.AddSeconds(1));
         Assert.Equal(1, r.Calls.Count(c => c == "-l --running -q"));
         Assert.Same(first, second);
+    }
+
+    [Fact]
+    public void List_failure_returns_empty_and_clears_home_cache()
+    {
+        var r = new FakeRunner { Running = "Ubuntu\n" };
+        var src = Source(r);
+        src.Poll(Now);
+        r.ListExit = 1;
+        Assert.Empty(src.Poll(Now.AddSeconds(1)));
+        r.ListExit = 0;
+        src.Poll(Now.AddSeconds(2));
+        Assert.Equal(2, r.Calls.Count(c => c.Contains("printf")));
+    }
+
+    [Fact]
+    public void Home_cache_is_evicted_when_distro_stops()
+    {
+        var r = new FakeRunner { Running = "Ubuntu\n" };
+        var src = Source(r);
+        src.Poll(Now);
+        r.Running = "";
+        src.Poll(Now.AddSeconds(1));
+        r.Running = "Ubuntu\n";
+        src.Poll(Now.AddSeconds(2));
+        Assert.Equal(2, r.Calls.Count(c => c.Contains("printf")));
+    }
+
+    [Fact]
+    public void Failed_home_lookup_backs_off_for_30_seconds()
+    {
+        var r = new FakeRunner { Running = "Ubuntu\n", HomeExit = 1 };
+        var src = Source(r);
+        src.Poll(Now);
+        src.Poll(Now.AddSeconds(10));
+        Assert.Equal(1, r.Calls.Count(c => c.Contains("printf")));
+        src.Poll(Now.AddSeconds(31));
+        Assert.Equal(2, r.Calls.Count(c => c.Contains("printf")));
+    }
+
+    [Fact]
+    public void Failed_ps_backs_off_for_30_seconds()
+    {
+        Write("a", "working", 100);
+        var r = new FakeRunner { Running = "Ubuntu\n", Ps = "100 1 claude\n", PsExit = 1 };
+        var src = Source(r);
+        Assert.Empty(src.Poll(Now));
+        src.Poll(Now.AddSeconds(10));
+        Assert.Equal(1, r.Calls.Count(c => c.Contains(" ps ")));
+        r.PsExit = 0;
+        Assert.Single(src.Poll(Now.AddSeconds(31)));
+        Assert.Equal(2, r.Calls.Count(c => c.Contains(" ps ")));
+    }
+
+    [Fact]
+    public void Backoff_clears_when_distro_leaves_running_list()
+    {
+        var r = new FakeRunner { Running = "Ubuntu\n", HomeExit = 1 };
+        var src = Source(r);
+        src.Poll(Now);
+        r.Running = "";
+        src.Poll(Now.AddSeconds(1));
+        r.Running = "Ubuntu\n";
+        src.Poll(Now.AddSeconds(2));
+        Assert.Equal(2, r.Calls.Count(c => c.Contains("printf")));
+    }
+
+    [Fact]
+    public void Title_cache_survives_across_polls()
+    {
+        var transcript = Path.Combine(_root, "Ubuntu", "home", "u", "t.jsonl");
+        Directory.CreateDirectory(Path.GetDirectoryName(transcript)!);
+        File.WriteAllText(transcript, "{\"type\":\"agent-name\",\"agentName\":\"AAAA\"}\n");
+        Directory.CreateDirectory(SessionsDir());
+        File.WriteAllText(Path.Combine(SessionsDir(), "a.json"),
+            $$"""{"state":"working","session_id":"a","cwd":"/p","pid":100,"transcript_path":"/home/u/t.jsonl","updated_at":{{Now.ToUnixTimeSeconds()}}}""");
+        var r = new FakeRunner { Running = "Ubuntu\n", Ps = "100 1 claude\n" };
+        var src = Source(r);
+
+        Assert.Equal("AAAA", Assert.Single(src.Poll(Now)).Title);
+        // Same size, different content: a re-read would return BBBB.
+        File.WriteAllText(transcript, "{\"type\":\"agent-name\",\"agentName\":\"BBBB\"}\n");
+        Assert.Equal("AAAA", Assert.Single(src.Poll(Now.AddSeconds(10))).Title);
+    }
+
+    [Fact]
+    public void Clock_going_backwards_forces_a_real_poll()
+    {
+        var r = new FakeRunner();
+        var src = Source(r, TimeSpan.FromSeconds(3));
+        src.Poll(Now);
+        src.Poll(Now.AddSeconds(-5));
+        Assert.Equal(2, r.Calls.Count(c => c == "-l --running -q"));
+    }
+
+    [Fact]
+    public void Distro_list_strips_bom()
+    {
+        Assert.Equal(["Ubuntu"], WslOutput.ParseDistroList("\uFEFFUbuntu\n"));
     }
 }

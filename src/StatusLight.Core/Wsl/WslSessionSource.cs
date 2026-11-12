@@ -12,15 +12,21 @@ public sealed class WslSessionSource(ICommandRunner wsl, Func<string, string> un
     private const string SessionsRelative = "/.claude/status-light/sessions";
 
     private readonly Dictionary<string, string> _homes = new();
+    private readonly Dictionary<string, TranscriptTitleCache> _titles = new();
+    private readonly Dictionary<string, DateTimeOffset> _retryAfter = new();
+    private static readonly TimeSpan FailureBackoff = TimeSpan.FromSeconds(30);
     private IReadOnlyList<SessionState> _last = [];
     private DateTimeOffset? _lastPoll;
 
     public WslSessionSource(ICommandRunner wsl)
         : this(wsl, d => $@"\\wsl.localhost\{d}", TimeSpan.FromSeconds(3)) { }
 
+    /// <summary>
+    /// May block on 9P filesystem IO over \\wsl.localhost; call off the UI thread, never overlapping.
+    /// </summary>
     public IReadOnlyList<SessionState> Poll(DateTimeOffset now)
     {
-        if (_lastPoll is { } last && now - last < minInterval) return _last;
+        if (_lastPoll is { } last && now >= last && now - last < minInterval) return _last;
         _lastPoll = now;
         _last = PollCore(now);
         return _last;
@@ -32,20 +38,25 @@ public sealed class WslSessionSource(ICommandRunner wsl, Func<string, string> un
         if (list.ExitCode != 0)
         {
             _homes.Clear();
+            _titles.Clear();
+            _retryAfter.Clear();
             return [];
         }
 
         var distros = WslOutput.ParseDistroList(list.Stdout);
         foreach (var stale in _homes.Keys.Where(k => !distros.Contains(k)).ToList()) _homes.Remove(stale);
+        foreach (var stale in _titles.Keys.Where(k => !distros.Contains(k)).ToList()) _titles.Remove(stale);
+        foreach (var stale in _retryAfter.Keys.Where(k => !distros.Contains(k)).ToList()) _retryAfter.Remove(stale);
 
         var result = new List<SessionState>();
         foreach (var distro in distros)
         {
+            if (_retryAfter.TryGetValue(distro, out var retryAt) && now < retryAt) continue;
             if (!_homes.TryGetValue(distro, out var home))
             {
                 var r = wsl.Run(["-d", distro, "-e", "sh", "-c", "printf %s \"$HOME\""], CommandTimeout);
                 home = r.ExitCode == 0 ? r.Stdout.Replace("\0", "").Trim() : "";
-                if (home.Length == 0) continue; // don't cache failures
+                if (home.Length == 0) { _retryAfter[distro] = now + FailureBackoff; continue; } // don't cache failures
                 _homes[distro] = home;
             }
 
@@ -53,12 +64,16 @@ public sealed class WslSessionSource(ICommandRunner wsl, Func<string, string> un
             if (!HasSessionFiles(dir)) continue;
 
             var ps = wsl.Run(["-d", distro, "-e", "ps", "-eo", "pid=,ppid=,args="], CommandTimeout);
-            if (ps.ExitCode != 0) continue;
+            if (ps.ExitCode != 0) { _retryAfter[distro] = now + FailureBackoff; continue; }
+            _retryAfter.Remove(distro);
+
+            if (!_titles.TryGetValue(distro, out var titles)) _titles[distro] = titles = new TranscriptTitleCache();
 
             var reader = new SessionDirectoryReader(
                 dir, SessionOrigin.Wsl, distro,
                 new WslProcessTable(WslOutput.ParsePs(ps.Stdout)),
-                p => WslPaths.Map(uncRoot(distro), p));
+                p => WslPaths.Map(uncRoot(distro), p),
+                titles);
             result.AddRange(reader.Read(now));
         }
 

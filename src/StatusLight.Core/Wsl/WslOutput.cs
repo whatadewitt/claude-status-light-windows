@@ -9,7 +9,7 @@ public static class WslOutput
     /// <summary>Tolerates UTF-16 output decoded as bytes (embedded NULs) and CRLF line endings.</summary>
     public static IReadOnlyList<string> ParseDistroList(string stdout)
     {
-        return stdout.Replace("\0", "").Replace("\r", "")
+        return stdout.TrimStart('\uFEFF').Replace("\0", "").Replace("\r", "")
             .Split('\n')
             .Select(l => l.Trim())
             .Where(l => l.Length > 0)
