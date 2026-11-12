@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Windows.Forms;
 using StatusLight.App.Platform;
 using StatusLight.App.Rendering;
+using StatusLight.App.Settings;
 using StatusLight.Core;
 using StatusLight.Core.Sources;
 
@@ -29,6 +30,7 @@ public sealed class TrayController : IDisposable
     private readonly NotifyIcon _notify;
     private readonly ContextMenuStrip _menu;
     private readonly Dictionary<LightState, Bitmap> _dots = new();
+    private SettingsWindow? _settingsWindow;
 
     public TrayController(AppHost host, SettingsStore store, IconCache icons, Action quit)
     {
@@ -54,6 +56,7 @@ public sealed class TrayController : IDisposable
     public void Dispose()
     {
         _host.Updated -= OnUpdated;
+        _settingsWindow?.Close();
         _notify.Visible = false;
         _notify.Dispose();
         ClearMenu();
@@ -133,8 +136,21 @@ public sealed class TrayController : IDisposable
         _store.Save(settings with { ShowFloatingWindow = !settings.ShowFloatingWindow });
     }
 
+    /// <summary>Shows the one settings window, creating it on first use and bringing it forward after.</summary>
     private void OpenSettings()
     {
+        if (_settingsWindow is null)
+        {
+            var window = new SettingsWindow(_host, _store, RevealIconFolder);
+            window.Closed += (_, _) => _settingsWindow = null;
+            _settingsWindow = window;
+        }
+        _settingsWindow.Show();
+        if (_settingsWindow.WindowState == System.Windows.WindowState.Minimized)
+        {
+            _settingsWindow.WindowState = System.Windows.WindowState.Normal;
+        }
+        _settingsWindow.Activate();
     }
 
     /// <summary>Opens %USERPROFILE%\.claude\status-light so a custom icon.png can be dropped in.</summary>

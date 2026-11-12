@@ -1,5 +1,6 @@
 using System.IO;
 using StatusLight.App.Floating;
+using StatusLight.App.Platform;
 using StatusLight.App.Rendering;
 using StatusLight.App.Tray;
 using StatusLight.Core;
@@ -17,6 +18,8 @@ public partial class App : Application
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ClaudeStatusLight", "settings.json");
 
     private Mutex? _instance;
+    private SettingsStore? _store;
+    private bool? _startAtLogin;
     private AppHost? _host;
     private IconCache? _icons;
     private TrayController? _tray;
@@ -38,16 +41,19 @@ public partial class App : Application
         // A tray app has no window to show an error in; never let one exception make the light vanish.
         DispatcherUnhandledException += (_, args) => args.Handled = true;
 
-        var store = new SettingsStore(SettingsPath);
+        var store = _store = new SettingsStore(SettingsPath);
         _host = new AppHost(store, Dispatcher);
         _icons = new IconCache();
         _tray = new TrayController(_host, store, _icons, Shutdown);
         _floating = new FloatingController(_host, store, _icons);
+        ApplyStartAtLogin(_host.Settings);
+        store.Changed += ApplyStartAtLogin;
         _host.Start();
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
+        if (_store is not null) _store.Changed -= ApplyStartAtLogin;
         _floating?.Dispose();
         _tray?.Dispose();
         _host?.Dispose();
@@ -58,5 +64,22 @@ public partial class App : Application
             _instance.Dispose();
         }
         base.OnExit(e);
+    }
+
+    /// <summary>
+    /// Syncs the HKCU Run value with the setting at every launch (so it follows the exe if it
+    /// moves) and whenever StartAtLogin changes. A registry failure never crashes the app.
+    /// </summary>
+    private void ApplyStartAtLogin(AppSettings s)
+    {
+        if (_startAtLogin == s.StartAtLogin || Environment.ProcessPath is not { } exe) return;
+        try
+        {
+            new StartupRegistration().Apply(s.StartAtLogin, exe);
+            _startAtLogin = s.StartAtLogin; // a failed write is retried on the next settings change
+        }
+        catch (Exception)
+        {
+        }
     }
 }

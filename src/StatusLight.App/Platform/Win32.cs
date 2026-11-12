@@ -45,4 +45,53 @@ public static partial class Win32
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static partial bool SetWindowPos(nint hWnd, nint hWndInsertAfter, int x, int y, int cx, int cy, uint uFlags);
+
+    // Window enumeration and activation (WindowFocuser).
+
+    public const uint GW_OWNER = 4;
+    public const int SW_RESTORE = 9;
+
+    /// <summary>The callback returns nonzero to continue enumerating.</summary>
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static unsafe partial bool EnumWindows(delegate* unmanaged<nint, nint, int> lpEnumFunc, nint lParam);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial uint GetWindowThreadProcessId(nint hWnd, out uint lpdwProcessId);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    public static partial nint GetWindow(nint hWnd, uint uCmd);
+
+    [LibraryImport("user32.dll", EntryPoint = "GetClassNameW", SetLastError = true)]
+    public static unsafe partial int GetClassName(nint hWnd, char* lpClassName, int nMaxCount);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsWindow(nint hWnd);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsWindowVisible(nint hWnd);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool IsIconic(nint hWnd);
+
+    [LibraryImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool ShowWindow(nint hWnd, int nCmdShow);
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool BringWindowToTop(nint hWnd);
+
+    [LibraryImport("user32.dll")]
+    public static partial nint GetForegroundWindow();
+
+    [LibraryImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static partial bool AttachThreadInput(uint idAttach, uint idAttachTo, [MarshalAs(UnmanagedType.Bool)] bool fAttach);
+
+    [LibraryImport("kernel32.dll")]
+    public static partial uint GetCurrentThreadId();
 }
