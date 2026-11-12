@@ -11,7 +11,8 @@ function Invoke-Native {
     # Runs a native command and returns its exit code (and, with -Quiet, its stdout lines;
     # stderr is discarded). Otherwise stdout goes to the host. $ErrorActionPreference is
     # relaxed for the call because Windows PowerShell 5.1 turns redirected native stderr
-    # into error records, which 'Stop' would make fatal.
+    # into error records, which 'Stop' would make fatal. A command that fails to launch
+    # reports exit code -1, never a stale $LASTEXITCODE from an earlier call.
     param(
         [Parameter(Mandatory = $true)][string]$FilePath,
         [string[]]$ArgumentList = @(),
@@ -19,17 +20,21 @@ function Invoke-Native {
     )
     $savedPreference = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
+    $out = @()
+    $global:LASTEXITCODE = -1
     try {
-        $out = @()
         if ($Quiet) {
             $out = @(& $FilePath @ArgumentList 2>$null)
         } else {
             & $FilePath @ArgumentList | Out-Host
         }
-        return [pscustomobject]@{ ExitCode = $LASTEXITCODE; Output = $out }
+        $code = $global:LASTEXITCODE
+    } catch {
+        $code = -1
     } finally {
         $ErrorActionPreference = $savedPreference
     }
+    return [pscustomobject]@{ ExitCode = $code; Output = $out }
 }
 
 function Invoke-WithRetry {
@@ -66,7 +71,7 @@ function Invoke-HookSettings {
     )
     $r = Invoke-Native -FilePath $HookExe -ArgumentList @("--$Mode-hooks", $SettingsPath, $HookPath)
     if ($r.ExitCode -eq 2) {
-        throw "$SettingsPath is not valid JSON $([char]0x2014) fix it and re-run"
+        throw "$SettingsPath is not valid JSON or UTF-8 $([char]0x2014) fix it and re-run"
     }
     if ($r.ExitCode -ne 0) {
         throw "status-hook.exe --$Mode-hooks failed for $SettingsPath (exit $($r.ExitCode))"
@@ -81,6 +86,13 @@ function Get-WslTargets {
 
     $savedWslUtf8 = $env:WSL_UTF8
     $env:WSL_UTF8 = '1'
+    # Decode wsl.exe output as UTF-8 (5.1 defaults to the OEM code page), so a non-ASCII
+    # Linux home survives. Setting it can fail without a console; then keep the default.
+    $savedEncoding = $null
+    try {
+        $savedEncoding = [Console]::OutputEncoding
+        [Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+    } catch { }
     try {
         $list = Invoke-Native -FilePath wsl.exe -ArgumentList @('-l', '-q') -Quiet
         if ($list.ExitCode -ne 0) { return }
@@ -108,5 +120,8 @@ function Get-WslTargets {
         }
     } finally {
         $env:WSL_UTF8 = $savedWslUtf8
+        if ($savedEncoding) {
+            try { [Console]::OutputEncoding = $savedEncoding } catch { }
+        }
     }
 }

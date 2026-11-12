@@ -12,7 +12,8 @@ Keeps %USERPROFILE%\.claude\status-light\icon.png.
 Don't touch WSL distros.
 
 .PARAMETER NoStop
-Don't stop a running app (used by the tests).
+Test-only: don't stop a running app and don't remove the HKCU Run (start at login) value,
+so the Pester tests don't touch the real app.
 #>
 [CmdletBinding()]
 param(
@@ -24,11 +25,13 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'common.ps1')
 
 # 1. Stop the app and remove the start-at-login entry.
-if (-not $NoStop) { Stop-App }
-$runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
-if (Get-ItemProperty -Path $runKey -Name $AppName -ErrorAction SilentlyContinue) {
-    Remove-ItemProperty -Path $runKey -Name $AppName
-    Write-Host 'Removed start at login'
+if (-not $NoStop) {
+    Stop-App
+    $runKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Run'
+    if (Get-ItemProperty -Path $runKey -Name $AppName -ErrorAction SilentlyContinue) {
+        Remove-ItemProperty -Path $runKey -Name $AppName
+        Write-Host 'Removed start at login'
+    }
 }
 
 # 2. Remove the hooks (Windows, then WSL), deleting the WSL hook script as we go.

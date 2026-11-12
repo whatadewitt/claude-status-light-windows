@@ -22,7 +22,8 @@ GitHub repo (owner/name) to download from. Default: parsed from this clone's ori
 Don't touch WSL distros.
 
 .PARAMETER NoStart
-Don't start the app afterwards (used by the tests).
+Test-only: leave any running app alone (don't stop it before copying) and don't start the
+app afterwards, so the Pester tests don't touch the real app.
 #>
 [CmdletBinding()]
 param(
@@ -117,7 +118,7 @@ try {
     }
 
     # 2. Install the files.
-    Stop-App
+    if (-not $NoStart) { Stop-App }
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
     foreach ($name in $InstalledFiles) {
         Invoke-WithRetry -Action { Copy-Item -LiteralPath (Join-Path $source $name) -Destination (Join-Path $InstallDir $name) -Force }
