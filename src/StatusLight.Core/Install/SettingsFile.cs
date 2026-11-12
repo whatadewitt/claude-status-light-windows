@@ -29,7 +29,9 @@ public static class SettingsFile
         if (!string.IsNullOrEmpty(linkDir)) Directory.CreateDirectory(linkDir);
 
         // Write through a symlinked settings.json rather than replacing the link.
-        var target = new FileInfo(settingsPath).ResolveLinkTarget(returnFinalTarget: true)?.FullName ?? settingsPath;
+        var target = (File.Exists(settingsPath)
+            ? new FileInfo(settingsPath).ResolveLinkTarget(returnFinalTarget: true)?.FullName
+            : null) ?? settingsPath;
 
         var dir = Path.GetDirectoryName(Path.GetFullPath(target));
         if (!string.IsNullOrEmpty(dir)) Directory.CreateDirectory(dir);
