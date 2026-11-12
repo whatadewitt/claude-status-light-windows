@@ -173,4 +173,55 @@ public sealed class HooksMergerTests : IDisposable
         Assert.Equal(3, Directory.GetFiles(_dir).Length);
         Assert.True(File.Exists($"{path}.bak.1700000000.1"));
     }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public void BlankHookPath_IsRejected(string? hook)
+    {
+        Assert.Throws<ArgumentException>(() => HooksMerger.Add(null, hook!));
+        Assert.Throws<ArgumentException>(() => HooksMerger.Remove("""{"hooks":{}}""", hook!));
+        var path = Path.Combine(_dir, "settings.json");
+        const string original = """{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo hi"}]}]}}""";
+        File.WriteAllText(path, original);
+        Assert.Equal(2, SettingsFile.RemoveHooks(path, hook!, Now));
+        Assert.Equal(2, SettingsFile.AddHooks(path, hook!, Now));
+        Assert.Equal(original, File.ReadAllText(path));
+        Assert.Single(Directory.GetFiles(_dir));
+    }
+
+    [Fact]
+    public void AddHooks_ThroughSymlink_KeepsLinkAndWritesTarget()
+    {
+        var target = Path.Combine(_dir, "real.json");
+        var link = Path.Combine(_dir, "settings.json");
+        File.WriteAllText(target, """{"model":"x"}""");
+        File.CreateSymbolicLink(link, target);
+        Assert.Equal(0, SettingsFile.AddHooks(link, Hook, Now));
+        Assert.NotNull(new FileInfo(link).LinkTarget);
+        Assert.Contains("SessionStart", File.ReadAllText(target));
+        Assert.DoesNotContain(Directory.GetFiles(_dir), f => f.EndsWith(".tmp"));
+    }
+
+    [Fact]
+    public void AddHooks_NonUtf8Content_Returns2_FileByteIdentical()
+    {
+        var path = Path.Combine(_dir, "settings.json");
+        var bytes = new byte[] { (byte)'{', (byte)'"', (byte)'a', (byte)'"', (byte)':', (byte)'"', 0xE9, (byte)'"', (byte)'}' };
+        File.WriteAllBytes(path, bytes);
+        Assert.Equal(2, SettingsFile.AddHooks(path, Hook, Now));
+        Assert.Equal(bytes, File.ReadAllBytes(path));
+        Assert.Single(Directory.GetFiles(_dir));
+    }
+
+    [Fact]
+    public void Remove_KeepsUserHookInMixedGroup()
+    {
+        var mixed = $$$"""{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo hi"},{"type":"command","command":"\"{{{Hook}}}\" idle"}]}]}}""";
+        var (outcome, json) = HooksMerger.Remove(mixed, Hook);
+        Assert.Equal(MergeOutcome.Changed, outcome);
+        Assert.True(JsonNode.DeepEquals(
+            P("""{"hooks":{"Stop":[{"hooks":[{"type":"command","command":"echo hi"}]}]}}"""), P(json!)));
+    }
 }

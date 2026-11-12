@@ -44,7 +44,7 @@ internal static class Program
                 : SettingsFile.RemoveHooks(args[1], args[2], DateTimeOffset.UtcNow);
             Console.WriteLine(code == 0
                 ? $"status-light hooks {(install ? "installed in" : "removed from")} {args[1]}"
-                : $"ERROR: {args[1]} is not valid JSON; left untouched.");
+                : $"ERROR: {args[1]} was not changed: invalid JSON/UTF-8 or empty hook path.");
             return code;
         }
         catch (Exception ex)

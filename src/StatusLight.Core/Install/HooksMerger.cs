@@ -20,6 +20,7 @@ public static class HooksMerger
 
     public static (MergeOutcome, string? Json) Add(string? existingJson, string hookPath)
     {
+        RequirePath(hookPath);
         if (!TryParseRoot(existingJson, out var root)) return (MergeOutcome.InvalidJson, null);
 
         JsonObject hooks;
@@ -61,6 +62,7 @@ public static class HooksMerger
 
     public static (MergeOutcome, string? Json) Remove(string? existingJson, string hookPath)
     {
+        RequirePath(hookPath);
         if (!TryParseRoot(existingJson, out var root)) return (MergeOutcome.InvalidJson, null);
         if (root["hooks"] is not JsonObject hooks) return (MergeOutcome.Unchanged, null);
 
@@ -115,6 +117,11 @@ public static class HooksMerger
         if (!changed) return (MergeOutcome.Unchanged, null);
         if (hooks.Count == 0) root.Remove("hooks");
         return (MergeOutcome.Changed, Serialize(root));
+    }
+
+    private static void RequirePath(string? hookPath)
+    {
+        if (string.IsNullOrWhiteSpace(hookPath)) throw new ArgumentException("hookPath must not be empty.", nameof(hookPath));
     }
 
     private static bool IsOurs(string command, string raw, string normalized) =>
