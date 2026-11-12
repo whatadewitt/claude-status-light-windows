@@ -1,6 +1,7 @@
 using System.Runtime.Versioning;
 using System.Text;
 using StatusLight.Core.Hook;
+using StatusLight.Core.Install;
 
 namespace StatusLight.Hook;
 
@@ -12,6 +13,7 @@ internal static class Program
     /// <summary>`status-hook.exe &lt;state&gt;`: records the hook event. Always exits 0 and never writes to stdout/stderr.</summary>
     private static int Main(string[] args)
     {
+        if (args.Length > 0 && (args[0] is "--install-hooks" or "--uninstall-hooks")) return Settings(args);
         try
         {
             var state = args.Length > 0 ? args[0] : "idle";
@@ -24,6 +26,32 @@ internal static class Program
             // The hook must never fail Claude Code.
         }
         return 0;
+    }
+
+    /// <summary>`--install-hooks|--uninstall-hooks &lt;settingsPath&gt; &lt;hookPath&gt;`: run by the installer. Exit 0 ok, 2 bad usage or invalid JSON, 1 unexpected failure.</summary>
+    private static int Settings(string[] args)
+    {
+        if (args.Length != 3)
+        {
+            Console.Error.WriteLine("usage: status-hook.exe --install-hooks|--uninstall-hooks <settingsPath> <hookPath>");
+            return 2;
+        }
+        try
+        {
+            var install = args[0] == "--install-hooks";
+            var code = install
+                ? SettingsFile.AddHooks(args[1], args[2], DateTimeOffset.UtcNow)
+                : SettingsFile.RemoveHooks(args[1], args[2], DateTimeOffset.UtcNow);
+            Console.WriteLine(code == 0
+                ? $"status-light hooks {(install ? "installed in" : "removed from")} {args[1]}"
+                : $"ERROR: {args[1]} is not valid JSON; left untouched.");
+            return code;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"ERROR: {ex.Message}");
+            return 1;
+        }
     }
 
     private static string SessionsDir()
