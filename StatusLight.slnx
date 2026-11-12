@@ -2,6 +2,7 @@
   <Folder Name="/src/">
     <Project Path="src/StatusLight.Core/StatusLight.Core.csproj" />
     <Project Path="src/StatusLight.Hook/StatusLight.Hook.csproj" />
+    <Project Path="src/StatusLight.App/StatusLight.App.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/StatusLight.Core.Tests/StatusLight.Core.Tests.csproj" />
