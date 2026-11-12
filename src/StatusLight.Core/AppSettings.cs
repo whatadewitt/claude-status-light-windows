@@ -9,7 +9,11 @@ public enum ScreenCorner { TopLeft, TopRight, BottomLeft, BottomRight }
 /// User preferences. Positional so the source-generated deserializer applies these parameter
 /// defaults to keys missing from the file (init-only properties would get <c>default</c>).
 /// </summary>
-/// <param name="FloatingX">Floating window position when not locked to a corner (device-independent units).</param>
+/// <param name="FloatingX">
+/// Floating window position when not locked to a corner, in physical screen pixels (virtual-screen
+/// coordinates): the window's top-left, or the auto-hide tile's when it was dragged while expanded.
+/// Pixels, not DIPs, so a restore onto a monitor with a different scale factor lands on the same spot.
+/// </param>
 /// <param name="FloatingY">See <paramref name="FloatingX"/>.</param>
 /// <param name="FloatingMonitor">Device name of the monitor the floating window was dragged onto.</param>
 public sealed record AppSettings(

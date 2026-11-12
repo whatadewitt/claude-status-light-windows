@@ -39,6 +39,7 @@ public partial class FloatingWindow : Window
     private double? _titleWidth;
     private List<RowView> _shownRows = [];
     private SessionState[] _sessions = [];
+    private UIElement? _pressedRow;
 
     /// <summary>Everything a row shows; rows are rebuilt only when this changes.</summary>
     private readonly record struct RowView(string Text, LightState State, string Tag, string Tooltip, bool Parked);
@@ -52,6 +53,9 @@ public partial class FloatingWindow : Window
     /// <summary>A listed session was clicked.</summary>
     public event Action<SessionState>? SessionClicked;
 
+    /// <summary>A header drag is starting (<see cref="IsDragging"/> is already true).</summary>
+    public event Action? DragStarted;
+
     /// <summary>A header drag finished; the argument says whether the window moved.</summary>
     public event Action<bool>? DragEnded;
 
@@ -61,14 +65,24 @@ public partial class FloatingWindow : Window
     /// <summary>True inside the drag's modal move loop, which keeps pumping polls and dance frames.</summary>
     public bool IsDragging { get; private set; }
 
-    public RectD Frame => new(Left, Top, Width, Height);
+    private nint Hwnd => new WindowInteropHelper(this).Handle;
 
-    public void SetFrame(RectD r)
+    /// <summary>The window's rect in physical screen pixels.</summary>
+    public RectD Frame =>
+        Win32.GetWindowRect(Hwnd, out var r) ? new RectD(r.Left, r.Top, r.Right - r.Left, r.Bottom - r.Top) : default;
+
+    /// <summary>
+    /// Moves and sizes the window in one SetWindowPos, in physical pixels, without activating it.
+    /// Left/Top/Width/Height are never set, so WPF never moves it in DIPs behind our back.
+    /// </summary>
+    public void SetFrame(RectD px)
     {
-        if (Left != r.X) Left = r.X;
-        if (Top != r.Y) Top = r.Y;
-        if (Width != r.Width) Width = r.Width;
-        if (Height != r.Height) Height = r.Height;
+        var hwnd = Hwnd;
+        if (hwnd == 0) return;
+        int x = (int)Math.Round(px.X), y = (int)Math.Round(px.Y);
+        int w = (int)Math.Round(px.Width), h = (int)Math.Round(px.Height);
+        if (Frame == new RectD(x, y, w, h)) return;
+        Win32.SetWindowPos(hwnd, 0, x, y, w, h, Win32.SWP_NOZORDER | Win32.SWP_NOACTIVATE);
     }
 
     /// <summary>Shows the full panel, or only the auto-hide tile.</summary>
@@ -169,21 +183,23 @@ public partial class FloatingWindow : Window
     private void OnHeaderMouseDown(object sender, MouseButtonEventArgs e)
     {
         if (!Draggable || e.ButtonState != MouseButtonState.Pressed) return;
-        var before = (Left, Top);
+        var before = Frame;
         IsDragging = true;
         try
         {
+            DragStarted?.Invoke();
             DragMove(); // returns when the button is released
         }
         catch (InvalidOperationException)
         {
-            return; // the button was already up
+            // The button was already up: nothing moved, reported below as an unmoved drag.
         }
         finally
         {
             IsDragging = false;
         }
-        DragEnded?.Invoke(before != (Left, Top));
+        var after = Frame;
+        DragEnded?.Invoke((before.X, before.Y) != (after.X, after.Y));
     }
 
     private UIElement MakeRow(RowView view, int index)
@@ -231,8 +247,13 @@ public partial class FloatingWindow : Window
             ToolTip = view.Tooltip,
             Opacity = view.Parked ? 0.5 : 1,
         };
+        // A click is a press and release on the same row (not a drag that ends over it).
+        row.MouseLeftButtonDown += (_, _) => _pressedRow = row;
         row.MouseLeftButtonUp += (_, e) =>
         {
+            var pressed = ReferenceEquals(_pressedRow, row);
+            _pressedRow = null;
+            if (!pressed) return;
             e.Handled = true;
             if (index < _sessions.Length) SessionClicked?.Invoke(_sessions[index]);
         };

@@ -20,8 +20,10 @@ namespace StatusLight.App.Floating;
 /// hides it with the ShowFloatingWindow setting, pins it to a corner or the saved drag position,
 /// and with auto-hide rests it as a mascot tile that expands on hover, or by itself when a session
 /// starts waiting for input (staying out until hovered and left, or the wait clears).
-/// All geometry is in WPF device-independent units at the window's current DPI (see
-/// <see cref="ScreenDips"/>). Never activates or focuses the window.
+/// Placement is in physical pixels (monitor work areas, the saved position and the HWND rect);
+/// only the content size and the tile/margin constants start as DIPs and are scaled by the
+/// window's current DPI in <see cref="ScreenUnits"/>. After a move onto a monitor with another
+/// scale factor, DpiChanged re-places at the new scale. Never activates or focuses the window.
 /// </summary>
 public sealed class FloatingController : IDisposable
 {
@@ -46,9 +48,10 @@ public sealed class FloatingController : IDisposable
     /// panel doesn't flip its growth direction.
     /// </summary>
     private ScreenCorner _anchor = ScreenCorner.TopRight;
+    /// <summary>Expanded state and anchor captured at drag start; the drag end saves from these.</summary>
+    private bool _dragFromExpanded;
+    private ScreenCorner _dragAnchor;
     private bool _disposed;
-
-    private readonly record struct Spot(RectD Rect, RectD Work, ScreenCorner Anchor);
 
     public FloatingController(AppHost host, SettingsStore store, IconCache icons)
     {
@@ -62,6 +65,7 @@ public sealed class FloatingController : IDisposable
 
         _window.MouseEnter += (_, _) => HoverChanged(true);
         _window.MouseLeave += (_, _) => HoverChanged(false);
+        _window.DragStarted += OnDragStarted;
         _window.DragEnded += OnDragEnded;
         _window.SessionClicked += s => WindowFocuser.Focus(s);
         // Deferred: WPF moves the window to the system's suggested rect after raising DpiChanged.
@@ -154,7 +158,9 @@ public sealed class FloatingController : IDisposable
     {
         if (_settings.ShowFloatingWindow)
         {
-            if (!_window.IsVisible) _window.Show(); // ShowActivated=false: shown without activation
+            if (_window.IsVisible) return;
+            _window.Show(); // ShowActivated=false: shown without activation
+            Place();        // the HWND rect is ours; reassert it after WPF's first-show setup
         }
         else if (_window.IsVisible)
         {
@@ -168,6 +174,7 @@ public sealed class FloatingController : IDisposable
 
     private void HoverChanged(bool inside)
     {
+        if (_window.IsDragging) return; // the pointer moves with the window; nothing really changed
         _hovering = inside;
         _collapseTimer.Stop();
         if (!_settings.AutoHide) return;
@@ -209,21 +216,22 @@ public sealed class FloatingController : IDisposable
         if (_disposed || _window.IsDragging) return; // the drag's end saves and re-places
         var autoHide = _settings.AutoHide;
         _window.SetMode(full: !autoHide || _expanded);
-        var scale = ScreenDips.Scale(_window);
+        var scale = ScreenUnits.Scale(_window);
 
         RectD target;
         if (!autoHide)
         {
-            var (w, h) = _window.MeasureFull();
+            var (w, h) = FullSize(scale);
             target = Home(w, h, scale).Rect;
         }
         else
         {
-            var tile = Home(TileSide, TileSide, scale);
+            var side = ScreenUnits.ToPixels(TileSide, scale);
+            var tile = Home(side, side, scale);
             if (!_expanded || _settings.LockToCorner) _anchor = tile.Anchor;
             if (_expanded)
             {
-                var (w, h) = _window.MeasureFull();
+                var (w, h) = FullSize(scale);
                 target = PanelGeometry.Frame(w, h, _anchor, tile.Rect, tile.Work);
             }
             else
@@ -234,41 +242,29 @@ public sealed class FloatingController : IDisposable
         _window.SetFrame(target);
     }
 
-    /// <summary>
-    /// Where a <paramref name="w"/> × <paramref name="h"/> window rests. Locked (or never dragged):
-    /// the chosen corner of the current monitor's work area. Unlocked with a saved position: that
-    /// point, unless its monitor is gone or it is off every work area, in which case the top-right
-    /// of the primary monitor.
-    /// </summary>
-    private Spot Home(double w, double h, double scale)
+    private (double Width, double Height) FullSize(double scale)
     {
-        var s = _settings;
-        if (!s.LockToCorner && s.FloatingX is { } x && s.FloatingY is { } y)
-        {
-            if (ScreenDips.ByName(s.FloatingMonitor) is not null && ScreenDips.WorkAreaContaining(x, y, scale) is { } work)
-            {
-                var rect = new RectD(x, y, w, h);
-                return new Spot(rect, work, PanelGeometry.Quadrant(rect, work));
-            }
-            var primary = ScreenDips.WorkArea(ScreenDips.Primary(), scale);
-            return new Spot(Corner(ScreenCorner.TopRight, w, h, primary), primary, ScreenCorner.TopRight);
-        }
-        var current = ScreenDips.WorkArea(ScreenDips.Current(_window), scale);
-        return new Spot(Corner(s.Corner, w, h, current), current, s.Corner);
+        var (w, h) = _window.MeasureFull();
+        return (ScreenUnits.ToPixels(w, scale), ScreenUnits.ToPixels(h, scale));
     }
 
-    private static RectD Corner(ScreenCorner corner, double w, double h, RectD work) => corner switch
+    private PanelSpot Home(double w, double h, double scale) => PanelGeometry.Home(
+        w, h, _settings, ScreenUnits.Monitors(),
+        currentWork: ScreenUnits.WorkArea(ScreenUnits.Current(_window)),
+        primaryWork: ScreenUnits.WorkArea(ScreenUnits.Primary()),
+        margin: ScreenUnits.ToPixels(Margin, scale));
+
+    private void OnDragStarted()
     {
-        ScreenCorner.TopLeft => new RectD(work.X + Margin, work.Y + Margin, w, h),
-        ScreenCorner.TopRight => new RectD(work.Right - w - Margin, work.Y + Margin, w, h),
-        ScreenCorner.BottomLeft => new RectD(work.X + Margin, work.Bottom - h - Margin, w, h),
-        _ => new RectD(work.Right - w - Margin, work.Bottom - h - Margin, w, h),
-    };
+        _collapseTimer.Stop();
+        _dragFromExpanded = _settings.AutoHide && _expanded;
+        _dragAnchor = _anchor;
+    }
 
     /// <summary>
-    /// Saves the dragged position once, when the drag ends. While auto-hide has the panel open, the
-    /// saved spot is the tile's, in the anchored corner. It is kept inside the monitor's work area
-    /// so a restore never treats it as off-screen.
+    /// Saves the dragged position once, when the drag ends: the window's top-left in pixels, or,
+    /// when the auto-hide panel was open at drag start, the tile's in the anchored corner. It is
+    /// kept inside the monitor's work area so a restore never treats it as off-screen.
     /// </summary>
     private void OnDragEnded(bool moved)
     {
@@ -280,15 +276,15 @@ public sealed class FloatingController : IDisposable
         }
         var f = _window.Frame;
         var spot = f;
-        if (_settings.AutoHide && _expanded)
+        if (_dragFromExpanded)
         {
-            var left = _anchor is ScreenCorner.TopLeft or ScreenCorner.BottomLeft;
-            var top = _anchor is ScreenCorner.TopLeft or ScreenCorner.TopRight;
-            spot = new RectD(left ? f.X : f.Right - TileSide, top ? f.Y : f.Bottom - TileSide, TileSide, TileSide);
+            var side = ScreenUnits.ToPixels(TileSide, ScreenUnits.Scale(_window));
+            var left = _dragAnchor is ScreenCorner.TopLeft or ScreenCorner.BottomLeft;
+            var top = _dragAnchor is ScreenCorner.TopLeft or ScreenCorner.TopRight;
+            spot = new RectD(left ? f.X : f.Right - side, top ? f.Y : f.Bottom - side, side, side);
         }
-        var screen = ScreenDips.Current(_window);
-        var work = ScreenDips.WorkArea(screen, ScreenDips.Scale(_window));
-        spot = PanelGeometry.Frame(spot.Width, spot.Height, ScreenCorner.TopLeft, spot, work);
+        var screen = ScreenUnits.Current(_window);
+        spot = PanelGeometry.Frame(spot.Width, spot.Height, ScreenCorner.TopLeft, spot, ScreenUnits.WorkArea(screen));
         _store.Save(_settings with { FloatingX = spot.X, FloatingY = spot.Y, FloatingMonitor = screen.DeviceName });
     }
 
@@ -298,7 +294,7 @@ public sealed class FloatingController : IDisposable
     private void RenderIcons()
     {
         if (_disposed || _rendered is not { } snapshot) return;
-        var scale = ScreenDips.Scale(_window);
+        var scale = ScreenUnits.Scale(_window);
         _window.SetIcons(
             Render(snapshot, HeaderIconSide * scale),
             _settings.AutoHide ? Render(snapshot, TileIconSide * scale) : null);
@@ -329,10 +325,10 @@ public sealed class FloatingController : IDisposable
 }
 
 /// <summary>
-/// The one place monitor pixels become WPF units: System.Windows.Forms.Screen reports work areas in
-/// physical pixels, and the window's Left/Top/Width/Height are DIPs at its current DPI.
+/// The one place WPF units meet pixels. System.Windows.Forms.Screen reports work areas in physical
+/// pixels, which is what placement uses; content measured in DIPs is scaled by the window's DPI.
 /// </summary>
-internal static class ScreenDips
+internal static class ScreenUnits
 {
     public static double Scale(Visual window)
     {
@@ -340,26 +336,18 @@ internal static class ScreenDips
         return scale > 0 ? scale : 1;
     }
 
-    public static RectD WorkArea(Screen screen, double scale)
+    public static double ToPixels(double dips, double scale) => Math.Ceiling(dips * scale);
+
+    public static RectD WorkArea(Screen screen)
     {
         var r = screen.WorkingArea;
-        return new RectD(r.X / scale, r.Y / scale, r.Width / scale, r.Height / scale);
+        return new RectD(r.X, r.Y, r.Width, r.Height);
     }
+
+    public static MonitorArea[] Monitors() =>
+        Screen.AllScreens.Select(s => new MonitorArea(s.DeviceName, WorkArea(s))).ToArray();
 
     public static Screen Current(Window window) => Screen.FromHandle(new WindowInteropHelper(window).Handle);
 
     public static Screen Primary() => Screen.PrimaryScreen ?? Screen.AllScreens[0];
-
-    public static Screen? ByName(string? deviceName) =>
-        deviceName is null ? null : Screen.AllScreens.FirstOrDefault(s => s.DeviceName == deviceName);
-
-    public static RectD? WorkAreaContaining(double x, double y, double scale)
-    {
-        foreach (var screen in Screen.AllScreens)
-        {
-            var r = WorkArea(screen, scale);
-            if (x >= r.X && x < r.Right && y >= r.Y && y < r.Bottom) return r;
-        }
-        return null;
-    }
 }

@@ -111,5 +111,71 @@ public sealed class PanelGeometryTests
         Assert.Equal(40, r.Right);
     }
 
+    // Home: where the window rests, in physical pixels. A 1920x1080 primary (taskbar 40 px) and a
+    // larger monitor to its right, as with a 150 % 4K-ish screen.
+    private const string Primary = @"\\.\DISPLAY1";
+    private const string Second = @"\\.\DISPLAY2";
+    private static readonly RectD PrimaryWork = new(0, 0, 1920, 1040);
+    private static readonly RectD SecondWork = new(1920, 0, 2560, 1400);
+    private static readonly MonitorArea[] Monitors = [new(Primary, PrimaryWork), new(Second, SecondWork)];
+
+    private static PanelSpot Home(AppSettings s, double w = 200, double h = 100) =>
+        PanelGeometry.Home(w, h, s, Monitors, currentWork: SecondWork, primaryWork: PrimaryWork, margin: 8);
+
+    [Theory]
+    [InlineData(ScreenCorner.TopLeft, 1928, 8)]
+    [InlineData(ScreenCorner.TopRight, 4272, 8)]
+    [InlineData(ScreenCorner.BottomLeft, 1928, 1292)]
+    [InlineData(ScreenCorner.BottomRight, 4272, 1292)]
+    public void Locked_pins_to_the_chosen_corner_of_the_current_work_area(ScreenCorner corner, double x, double y)
+    {
+        // A saved drag position is ignored while locked.
+        var spot = Home(new AppSettings(LockToCorner: true, Corner: corner, FloatingX: 100, FloatingY: 100, FloatingMonitor: Primary));
+        Assert.Equal(new RectD(x, y, 200, 100), spot.Rect);
+        Assert.Equal(SecondWork, spot.Work);
+        Assert.Equal(corner, spot.Anchor);
+    }
+
+    [Fact]
+    public void Unlocked_and_never_dragged_stays_in_the_chosen_corner()
+    {
+        var spot = Home(new AppSettings(LockToCorner: false, Corner: ScreenCorner.BottomLeft));
+        Assert.Equal(new RectD(1928, 1292, 200, 100), spot.Rect);
+        Assert.Equal(ScreenCorner.BottomLeft, spot.Anchor);
+    }
+
+    [Fact]
+    public void Unlocked_restores_the_saved_pixel_position_on_its_monitor()
+    {
+        var spot = Home(new AppSettings(LockToCorner: false, FloatingX: 2500, FloatingY: 300, FloatingMonitor: Second));
+        Assert.Equal(new RectD(2500, 300, 200, 100), spot.Rect);
+        Assert.Equal(SecondWork, spot.Work);
+        Assert.Equal(ScreenCorner.TopLeft, spot.Anchor); // the quadrant the spot sits in
+    }
+
+    [Theory]
+    [InlineData(@"\\.\DISPLAY3", 2500, 300)] // monitor unplugged
+    [InlineData(null, 2500, 300)]               // no monitor recorded
+    [InlineData(Second, 100, 100)]              // point is on another monitor, not the named one
+    [InlineData(Second, 4480, 300)]             // right edge is outside the work area
+    [InlineData(Second, 2500, -50)]             // above the work area
+    public void Unlocked_falls_back_to_the_primary_top_right_when_the_saved_spot_is_gone(string? monitor, double x, double y)
+    {
+        var spot = Home(new AppSettings(LockToCorner: false, Corner: ScreenCorner.BottomLeft,
+            FloatingX: x, FloatingY: y, FloatingMonitor: monitor));
+        Assert.Equal(new RectD(1712, 8, 200, 100), spot.Rect);
+        Assert.Equal(PrimaryWork, spot.Work);
+        Assert.Equal(ScreenCorner.TopRight, spot.Anchor);
+    }
+
+    [Fact]
+    public void A_saved_spot_is_clamped_inside_its_work_area_as_the_panel_grows()
+    {
+        var spot = Home(new AppSettings(LockToCorner: false, FloatingX: 4300, FloatingY: 1300, FloatingMonitor: Second),
+            w: 300, h: 200);
+        Assert.Equal(new RectD(4180, 1200, 300, 200), spot.Rect);
+        Assert.Equal(ScreenCorner.BottomRight, spot.Anchor);
+    }
+
     private static HashSet<string> Set(params string[] ids) => [.. ids];
 }
