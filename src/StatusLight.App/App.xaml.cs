@@ -1,4 +1,5 @@
 using System.IO;
+using StatusLight.App.Floating;
 using StatusLight.App.Rendering;
 using StatusLight.App.Tray;
 using StatusLight.Core;
@@ -19,6 +20,7 @@ public partial class App : Application
     private AppHost? _host;
     private IconCache? _icons;
     private TrayController? _tray;
+    private FloatingController? _floating;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -40,11 +42,13 @@ public partial class App : Application
         _host = new AppHost(store, Dispatcher);
         _icons = new IconCache();
         _tray = new TrayController(_host, store, _icons, Shutdown);
+        _floating = new FloatingController(_host, store, _icons);
         _host.Start();
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
+        _floating?.Dispose();
         _tray?.Dispose();
         _host?.Dispose();
         _icons?.Dispose();
