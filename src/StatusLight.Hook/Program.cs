@@ -18,6 +18,8 @@ internal static class Program
         {
             var state = args.Length > 0 ? args[0] : "idle";
             var payload = ReadStdin();
+            // A timed-out or failed read means we don't know which session this is: record nothing.
+            if (payload is null) return 0;
             new HookRunner(SessionsDir(), Identify, () => DateTimeOffset.UtcNow, HookRunner.DefaultMarkerName)
                 .Run(state, payload, Environment.CurrentDirectory);
         }
@@ -69,11 +71,16 @@ internal static class Program
             ["TERM_PROGRAM"] = Environment.GetEnvironmentVariable("TERM_PROGRAM"),
         };
         var ancestors = WindowsProcessChain.Ancestors(Environment.ProcessId).Skip(1).ToList();
-        return HostClassifier.Classify(ancestors, env, WindowsProcessChain.ConsoleWindow());
+        var hwnd = WindowsProcessChain.ConsoleWindow();
+        // Claude Code may start the hook with CREATE_NO_WINDOW; then borrow Claude's own console window.
+        if (hwnd == 0 && HostClassifier.ClaudeProcess(ancestors) is { } claude)
+            hwnd = WindowsProcessChain.ConsoleWindowOf(claude.Pid);
+        return HostClassifier.Classify(ancestors, env, hwnd);
     }
 
-    /// <summary>Reads stdin on a background task, giving up after <see cref="StdinCap"/> so a held-open pipe can't hang Claude Code.</summary>
-    private static string ReadStdin()
+    /// <summary>Reads stdin on a background task, giving up after <see cref="StdinCap"/> so a held-open pipe can't hang Claude Code.
+    /// Returns null on timeout or read failure; "" when stdin isn't redirected.</summary>
+    private static string? ReadStdin()
     {
         if (!Console.IsInputRedirected) return "";
         var read = Task.Run(() =>
@@ -83,11 +90,11 @@ internal static class Program
         });
         try
         {
-            return read.Wait(StdinCap) ? read.Result : "";
+            return read.Wait(StdinCap) ? read.Result : null;
         }
         catch (AggregateException)
         {
-            return "";
+            return null;
         }
     }
 }

@@ -37,6 +37,29 @@ internal static unsafe partial class WindowsProcessChain
 
     public static long ConsoleWindow() => GetConsoleWindow();
 
+    /// <summary>The console window of <paramref name="pid"/>, found by briefly attaching to its console; 0 on any failure.
+    /// Leaves this process with no console (it never writes to one).</summary>
+    public static long ConsoleWindowOf(int pid)
+    {
+        try
+        {
+            FreeConsole();
+            if (AttachConsole((uint)pid) == 0) return 0;
+            try
+            {
+                return GetConsoleWindow();
+            }
+            finally
+            {
+                FreeConsole();
+            }
+        }
+        catch (Exception)
+        {
+            return 0;
+        }
+    }
+
     private static string NormalizeName(string exeFile)
     {
         var name = exeFile.ToLowerInvariant();
@@ -128,4 +151,10 @@ internal static unsafe partial class WindowsProcessChain
 
     [LibraryImport("kernel32.dll")]
     private static partial nint GetConsoleWindow();
+
+    [LibraryImport("kernel32.dll")]
+    private static partial int FreeConsole();
+
+    [LibraryImport("kernel32.dll")]
+    private static partial int AttachConsole(uint dwProcessId);
 }

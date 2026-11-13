@@ -13,23 +13,39 @@ public static class HostClassifier
         && (p.ImagePath.Contains(@"\AnthropicClaude\", StringComparison.OrdinalIgnoreCase)
             || p.ImagePath.Contains(@"\WindowsApps\Claude", StringComparison.OrdinalIgnoreCase));
 
+    /// <summary>The Claude Code process: the first ancestor that isn't a shell; null when there is none.</summary>
+    /// <param name="ancestors">The hook's parent first, then upward.</param>
+    public static ProcEntry? ClaudeProcess(IReadOnlyList<ProcEntry> ancestors)
+    {
+        var i = ClaudeIndex(ancestors);
+        return i < 0 ? null : ancestors[i];
+    }
+
+    private static int ClaudeIndex(IReadOnlyList<ProcEntry> ancestors)
+    {
+        for (var i = 0; i < ancestors.Count; i++)
+        {
+            if (!Shells.Contains(ancestors[i].Name)) return i;
+        }
+        return -1;
+    }
+
     /// <param name="ancestors">The hook's parent first, then upward.</param>
     public static ProcessIdentity Classify(
         IReadOnlyList<ProcEntry> ancestors, IReadOnlyDictionary<string, string?> env, long consoleHwnd)
     {
-        var index = -1;
-        for (var i = 0; i < ancestors.Count; i++)
-        {
-            if (!Shells.Contains(ancestors[i].Name)) { index = i; break; }
-        }
+        var index = ClaudeIndex(ancestors);
         if (index < 0) return ProcessIdentity.Unknown;
         var claude = ancestors[index];
 
+        // The outermost desktop process is the main Electron process (stable across helper restarts).
+        ProcEntry? desktop = null;
         for (var i = index + 1; i < ancestors.Count; i++)
         {
-            if (IsClaudeDesktop(ancestors[i]))
-                return new(claude.Pid, claude.StartFileTime, "ClaudeApp", $"claude-app:{ancestors[i].Pid}", 0);
+            if (IsClaudeDesktop(ancestors[i])) desktop = ancestors[i];
         }
+        if (desktop is not null)
+            return new(claude.Pid, claude.StartFileTime, "ClaudeApp", $"claude-app:{desktop.Pid}", 0);
 
         var wt = Get(env, "WT_SESSION");
         if (wt is not null)

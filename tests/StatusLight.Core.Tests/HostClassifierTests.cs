@@ -46,6 +46,23 @@ public sealed class HostClassifierTests
     }
 
     [Fact]
+    public void Outermost_desktop_ancestor_is_the_host()
+    {
+        var helper = new ProcEntry(30, 31, "claude", DesktopPath, 600);
+        var main = new ProcEntry(31, 1, "claude", DesktopPath, 500);
+        var id = HostClassifier.Classify([Cmd, Cli, helper, main], Env(), 0);
+        Assert.Equal(new ProcessIdentity(20, 900, "ClaudeApp", "claude-app:31", 0), id);
+    }
+
+    [Fact]
+    public void ClaudeProcess_is_first_non_shell_ancestor()
+    {
+        Assert.Equal(Cli, HostClassifier.ClaudeProcess([Bash, Cmd, Cli, Desktop]));
+        Assert.Null(HostClassifier.ClaudeProcess([Bash, Cmd]));
+        Assert.Null(HostClassifier.ClaudeProcess([]));
+    }
+
+    [Fact]
     public void Console_without_wt_uses_console_pid_and_hwnd()
     {
         var id = HostClassifier.Classify([Bash, Cli], Env(), 77);

@@ -128,6 +128,37 @@ public sealed class HookExeTests(PublishedHook hook) : IClassFixture<PublishedHo
     }
 
     [Fact]
+    public async Task Held_open_stdin_times_out_without_writing_a_session()
+    {
+        var psi = new ProcessStartInfo(hook.Exe, "working")
+        {
+            RedirectStandardInput = true,
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true,
+        };
+        psi.Environment["USERPROFILE"] = _home;
+
+        using var p = Process.Start(psi)!;
+        var stdout = p.StandardOutput.ReadToEndAsync();
+        var stderr = p.StandardError.ReadToEndAsync();
+        p.StandardInput.Write("""{"session_id":"held",""");
+        p.StandardInput.Flush();
+        // stdin stays open: the hook must give up on its own.
+        var exited = p.WaitForExit(TimeSpan.FromSeconds(30));
+        p.StandardInput.Close();
+        if (!exited) p.Kill(entireProcessTree: true);
+
+        Assert.True(exited);
+        Assert.Equal(0, p.ExitCode);
+        Assert.Equal("", await stdout);
+        Assert.Equal("", await stderr);
+        Assert.False(File.Exists(SessionFile("default")));
+        Assert.False(File.Exists(SessionFile("held")));
+    }
+
+    [Fact]
     public void Garbage_stdin_exits_zero_and_writes_default()
     {
         var (exit, stdout, stderr) = Run(hook.Exe, "idle", "not json");
