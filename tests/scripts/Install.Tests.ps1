@@ -116,19 +116,28 @@ Describe 'Get-WslTargets' {
             [pscustomobject]@{ Name = 'wsl.exe' }
         }
 
-        # Fake wsl.exe: the distro list, each distro's home, and `test -d <home>/.claude`.
+        # Fake wsl.exe: the distro list, each distro's home, `test -d <home>/.claude` and
+        # `readlink -f <home>/.claude/settings.json`.
         Mock Invoke-Native -MockWith {
             $a = @($ArgumentList)
             if ($a[0] -eq '-l') {
                 # UTF-16LE read one byte per char: NULs between letters, and a NUL left at the
                 # start of the next line.
                 $ubuntu = -join ('Ubuntu'.ToCharArray() | ForEach-Object { "$_`0" })
-                $lines = @("$ubuntu`r`0", "`0", 'docker-desktop', 'docker-desktop-data', '', 'Windowsy', 'NoClaude', 'Debian')
+                $lines = @("$ubuntu`r`0", "`0", 'docker-desktop', 'docker-desktop-data', '', 'Windowsy', 'NoClaude', 'Debian', 'Arch')
                 return [pscustomobject]@{ ExitCode = 0; Output = $lines }
             }
-            $homes = @{ Ubuntu = "/home/me`r"; Windowsy = 'C:\Users\me'; NoClaude = '/home/nc'; Debian = '/home/d e' }
-            if ($a -contains 'sh') {
+            $homes = @{ Ubuntu = "/home/me`r"; Windowsy = 'C:\Users\me'; NoClaude = '/home/nc'; Debian = '/home/d e'; Arch = '/home/a' }
+            if ($a -contains 'printenv') {
                 return [pscustomobject]@{ ExitCode = 0; Output = @($homes[$a[1]]) }
+            }
+            if ($a -contains 'readlink') {
+                # Ubuntu links into the Windows drive, Arch to elsewhere in the distro, Debian's readlink fails.
+                $links = @{ Ubuntu = "/mnt/c/Users/me/dotfiles/claude.json`r"; Arch = '/home/a/dotfiles/claude.json' }
+                if ($links.ContainsKey($a[1])) {
+                    return [pscustomobject]@{ ExitCode = 0; Output = @($links[$a[1]]) }
+                }
+                return [pscustomobject]@{ ExitCode = 1; Output = @() }
             }
             $code = 0
             if ($a[1] -eq 'NoClaude') { $code = 1 }
@@ -141,16 +150,44 @@ Describe 'Get-WslTargets' {
 
         $targets = @(Get-WslTargets)
 
-        $targets.Count | Should -Be 2
+        $targets.Count | Should -Be 3
         $targets[0].Name | Should -Be 'Ubuntu'
         $targets[0].LinuxHome | Should -Be '/home/me'
         $targets[0].UncHome | Should -Be '\\wsl.localhost\Ubuntu\home\me'
         $targets[1].Name | Should -Be 'Debian'
         $targets[1].LinuxHome | Should -Be '/home/d e'
         $targets[1].UncHome | Should -Be '\\wsl.localhost\Debian\home\d e'
+        $targets[2].Name | Should -Be 'Arch'
 
         Should -Invoke Invoke-Native -Times 0 -Exactly -ParameterFilter { @($ArgumentList -like 'docker-desktop*').Count -gt 0 }
         Should -Invoke Invoke-Native -Times 0 -Exactly -ParameterFilter { ($ArgumentList -contains 'Windowsy') -and ($ArgumentList -contains 'test') }
         $env:WSL_UTF8 | Should -BeNullOrEmpty
+    }
+
+    It 'resolves settings.json symlinks inside the distro, mapping /mnt/<drive> to the drive' {
+        $targets = @(Get-WslTargets)
+
+        $targets[0].SettingsPath | Should -Be 'C:\Users\me\dotfiles\claude.json'
+        $targets[1].SettingsPath | Should -Be '\\wsl.localhost\Debian\home\d e\.claude\settings.json'
+        $targets[2].SettingsPath | Should -Be '\\wsl.localhost\Arch\home\a\dotfiles\claude.json'
+        Should -Invoke Invoke-Native -ParameterFilter {
+            (@($ArgumentList) -join '|') -eq '-d|Debian|-e|readlink|-f|/home/d e/.claude/settings.json'
+        }
+    }
+}
+
+Describe 'ConvertTo-WslWindowsPath' {
+    BeforeAll {
+        . (Join-Path $repoRoot 'scripts\common.ps1')
+    }
+
+    It 'maps <LinuxPath> to <Expected>' -TestCases @(
+        @{ LinuxPath = '/mnt/c/Users/me/settings.json'; Expected = 'C:\Users\me\settings.json' }
+        @{ LinuxPath = '/mnt/d'; Expected = 'D:\' }
+        @{ LinuxPath = '/mnt/wsl/x.json'; Expected = '\\wsl.localhost\Ubuntu\mnt\wsl\x.json' }
+        @{ LinuxPath = '/home/me/.claude/settings.json'; Expected = '\\wsl.localhost\Ubuntu\home\me\.claude\settings.json' }
+    ) {
+        param($LinuxPath, $Expected)
+        ConvertTo-WslWindowsPath -Distro 'Ubuntu' -LinuxPath $LinuxPath | Should -Be $Expected
     }
 }

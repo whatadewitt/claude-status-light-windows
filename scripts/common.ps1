@@ -78,9 +78,27 @@ function Invoke-HookSettings {
     }
 }
 
+function ConvertTo-WslWindowsPath {
+    # The Windows path of an absolute Linux path in a distro: /mnt/<drive>/rest is the Windows
+    # drive itself (<DRIVE>:\rest); anything else goes through \\wsl.localhost\<distro>.
+    param(
+        [Parameter(Mandatory = $true)][string]$Distro,
+        [Parameter(Mandatory = $true)][string]$LinuxPath
+    )
+    if ($LinuxPath -match '^/mnt/(?<drive>[A-Za-z])(?<rest>/.*)?$') {
+        $rest = $Matches['rest']
+        if (-not $rest) { $rest = '/' }
+        return $Matches['drive'].ToUpperInvariant() + ':' + $rest.Replace('/', '\')
+    }
+    return "\\wsl.localhost\$Distro" + $LinuxPath.Replace('/', '\')
+}
+
 function Get-WslTargets {
     # WSL distros whose default user has a ~/.claude directory, as objects with
-    # Name, LinuxHome (/home/me) and UncHome (\\wsl.localhost\<distro>\home\me).
+    # Name, LinuxHome (/home/me), UncHome (\\wsl.localhost\<distro>\home\me) and
+    # SettingsPath: the Windows path of ~/.claude/settings.json with symlinks resolved inside
+    # the distro (\\wsl.localhost can't follow a Linux symlink), e.g. C:\Users\me\dotfiles\x.json
+    # for a link into /mnt/c.
     # Note: this starts each listed distro. Skips docker-desktop* distros.
     if (-not (Get-Command wsl.exe -ErrorAction SilentlyContinue)) { return }
 
@@ -102,9 +120,9 @@ function Get-WslTargets {
             $distro = ("$line" -replace "`0", '').Trim()
             if (-not $distro -or $distro -like 'docker-desktop*') { continue }
 
-            # 'cd && pwd' prints $HOME without needing embedded double quotes, which
-            # Windows PowerShell 5.1 mangles in native arguments.
-            $h = Invoke-Native -FilePath wsl.exe -ArgumentList @('-d', $distro, '-e', 'sh', '-c', 'cd && pwd') -Quiet
+            # No shell and no quoting (5.1 mangles embedded double quotes in native arguments);
+            # the app probes the home the same way.
+            $h = Invoke-Native -FilePath wsl.exe -ArgumentList @('-d', $distro, '-e', 'printenv', 'HOME') -Quiet
             if ($h.ExitCode -ne 0) { continue }
             $linuxHome = (($h.Output -join "`n") -replace "`0", '').Trim()
             if (-not $linuxHome.StartsWith('/')) { continue }
@@ -112,10 +130,17 @@ function Get-WslTargets {
             $t = Invoke-Native -FilePath wsl.exe -ArgumentList @('-d', $distro, '-e', 'test', '-d', "$linuxHome/.claude") -Quiet
             if ($t.ExitCode -ne 0) { continue }
 
+            $linuxSettings = "$linuxHome/.claude/settings.json"
+            $resolved = ''
+            $l = Invoke-Native -FilePath wsl.exe -ArgumentList @('-d', $distro, '-e', 'readlink', '-f', $linuxSettings) -Quiet
+            if ($l.ExitCode -eq 0) { $resolved = (($l.Output -join "`n") -replace "`0", '').Trim() }
+            if (-not $resolved.StartsWith('/')) { $resolved = $linuxSettings }
+
             [pscustomobject]@{
-                Name      = $distro
-                LinuxHome = $linuxHome
-                UncHome   = "\\wsl.localhost\$distro" + $linuxHome.Replace('/', '\')
+                Name         = $distro
+                LinuxHome    = $linuxHome
+                UncHome      = "\\wsl.localhost\$distro" + $linuxHome.Replace('/', '\')
+                SettingsPath = ConvertTo-WslWindowsPath -Distro $distro -LinuxPath $resolved
             }
         }
     } finally {

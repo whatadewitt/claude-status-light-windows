@@ -5,8 +5,8 @@ Removes Claude Status Light for Windows.
 .DESCRIPTION
 Stops the app, removes its start-at-login entry, strips its hooks from
 %USERPROFILE%\.claude\settings.json and from each WSL distro's ~/.claude/settings.json,
-then deletes the WSL status-hook.sh, the install dir and the sessions dir.
-Keeps %USERPROFILE%\.claude\status-light\icon.png.
+then deletes the WSL status-hook.sh and sessions dirs, the install dir and the sessions dir.
+Keeps the icon.png files.
 
 .PARAMETER SkipWsl
 Don't touch WSL distros.
@@ -46,12 +46,14 @@ if (Test-Path -LiteralPath $hookExe -PathType Leaf) {
         foreach ($t in @(Get-WslTargets)) {
             Write-Host "Removing WSL hooks from $($t.Name)"
             $linuxHook = "$($t.LinuxHome)/.claude/status-light/status-hook.sh"
-            $wslSettings = "$($t.UncHome)\.claude\settings.json"
+            $wslSettings = $t.SettingsPath
             if (Test-Path -LiteralPath $wslSettings -PathType Leaf) {
                 Invoke-HookSettings -HookExe $hookExe -Mode uninstall -SettingsPath $wslSettings -HookPath $linuxHook
             }
             $wslHook = "$($t.UncHome)\.claude\status-light\status-hook.sh"
             if (Test-Path -LiteralPath $wslHook -PathType Leaf) { Remove-Item -LiteralPath $wslHook -Force }
+            $wslSessions = "$($t.UncHome)\.claude\status-light\sessions"
+            if (Test-Path -LiteralPath $wslSessions) { Remove-Item -LiteralPath $wslSessions -Recurse -Force }
         }
     }
 } else {

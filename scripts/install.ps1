@@ -101,6 +101,8 @@ function Get-ReleaseFiles {
 }
 
 $workDir = $null
+$wasRunning = $false
+$startAttempted = $false
 try {
     # 1. Get the files.
     if ($LocalBuild) {
@@ -118,7 +120,10 @@ try {
     }
 
     # 2. Install the files.
-    if (-not $NoStart) { Stop-App }
+    if (-not $NoStart) {
+        $wasRunning = @(Get-Process -Name $AppName -ErrorAction SilentlyContinue).Count -gt 0
+        Stop-App
+    }
     New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
     foreach ($name in $InstalledFiles) {
         Invoke-WithRetry -Action { Copy-Item -LiteralPath (Join-Path $source $name) -Destination (Join-Path $InstallDir $name) -Force }
@@ -143,15 +148,28 @@ try {
             [IO.File]::WriteAllBytes("$uncDir\status-hook.sh", $shBytes)
             $r = Invoke-Native -FilePath wsl.exe -ArgumentList @('-d', $t.Name, '-e', 'chmod', '+x', $linuxHook)
             if ($r.ExitCode -ne 0) { throw "chmod +x $linuxHook failed in $($t.Name) (exit $($r.ExitCode))." }
-            Invoke-HookSettings -HookExe $hookExe -Mode install -SettingsPath "$($t.UncHome)\.claude\settings.json" -HookPath $linuxHook
+            Invoke-HookSettings -HookExe $hookExe -Mode install -SettingsPath $t.SettingsPath -HookPath $linuxHook
         }
     }
 
     # 5. Start the app; it registers itself to start at login.
     if (-not $NoStart) {
+        $startAttempted = $true
         Start-Process -FilePath (Join-Path $InstallDir 'ClaudeStatusLight.exe') -WorkingDirectory $InstallDir
     }
     Write-Host 'Restart open Claude Code sessions so the new hooks load.'
 } finally {
+    # A step failed after the running app was stopped: don't leave the user without it.
+    if ($wasRunning -and -not $startAttempted) {
+        $appExe = Join-Path $InstallDir 'ClaudeStatusLight.exe'
+        if (Test-Path -LiteralPath $appExe -PathType Leaf) {
+            Write-Warning 'Install did not finish; restarting the app that was running before.'
+            try {
+                Start-Process -FilePath $appExe -WorkingDirectory $InstallDir
+            } catch {
+                Write-Warning "Could not restart ${AppName}: $($_.Exception.Message)"
+            }
+        }
+    }
     if ($workDir) { Remove-Item -LiteralPath $workDir -Recurse -Force -ErrorAction SilentlyContinue }
 }
