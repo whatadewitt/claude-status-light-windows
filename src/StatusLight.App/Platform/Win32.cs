@@ -79,7 +79,7 @@ public static partial class Win32
 
     [LibraryImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
-    public static partial bool ShowWindow(nint hWnd, int nCmdShow);
+    public static partial bool ShowWindowAsync(nint hWnd, int nCmdShow);
 
     [LibraryImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]

@@ -102,4 +102,43 @@ public sealed class BackgroundRefreshSourceTests
 
         Assert.Equal(1, Volatile.Read(ref refreshes));
     }
+
+    [Fact]
+    public void Inner_failure_is_reported_to_onError_and_keeps_the_cache()
+    {
+        var boom = new InvalidOperationException("boom");
+        using var reported = new ManualResetEventSlim();
+        Exception? seen = null;
+        var src = new BackgroundRefreshSource(new FakeSource(_ => throw boom), onError: e =>
+        {
+            seen = e;
+            reported.Set();
+        });
+
+        Assert.Empty(src.Poll(Now));
+        Assert.True(reported.Wait(Timeout));
+        Assert.Same(boom, seen);
+        Assert.Empty(src.Poll(Now));
+    }
+
+    [Fact]
+    public void Throwing_onError_does_not_escape_or_wedge_refreshes()
+    {
+        var calls = 0;
+        using var second = new ManualResetEventSlim();
+        var src = new BackgroundRefreshSource(new FakeSource(n =>
+        {
+            Interlocked.Exchange(ref calls, n);
+            if (n >= 2) second.Set();
+            throw new InvalidOperationException();
+        }), onError: _ => throw new InvalidOperationException("logger"));
+
+        src.Poll(Now);
+        for (var i = 0; i < 50 && !second.IsSet; i++)
+        {
+            Thread.Sleep(20);
+            src.Poll(Now);
+        }
+        Assert.True(second.IsSet);
+    }
 }

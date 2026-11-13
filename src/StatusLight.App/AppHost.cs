@@ -19,6 +19,7 @@ public sealed class AppHost : IDisposable
 
     private static readonly TimeSpan PollInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan WslMinInterval = TimeSpan.FromSeconds(3);
+    private static readonly TimeSpan WslPresenceRecheck = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan WatchDebounce = TimeSpan.FromMilliseconds(150);
     private static readonly TimeSpan DanceInterval = TimeSpan.FromSeconds(0.5);
 
@@ -45,9 +46,14 @@ public sealed class AppHost : IDisposable
         var local = new LocalWindowsSource(new SessionDirectoryReader(
             SessionsDir, SessionOrigin.Windows, null, new WindowsProcessTable(), p => p));
         // WSL reads may block on 9P IO: refresh them in the background so the native light never waits.
-        var wsl = new BackgroundRefreshSource(
-            new WslSessionSource(new WslCommandRunner(), d => $@"\\wsl.localhost\{d}", WslMinInterval),
-            () => _dispatcher.BeginInvoke(RequestPoll));
+        // Without any registered distro, nothing WSL-related is created or polled (re-checked each minute).
+        var wsl = new AvailabilityGatedSource(
+            WslPresence.HasDistros,
+            () => new BackgroundRefreshSource(
+                new WslSessionSource(new WslCommandRunner(), d => $@"\\wsl.localhost\{d}", WslMinInterval),
+                () => _dispatcher.BeginInvoke(RequestPoll),
+                e => Log.Error("WSL refresh failed", e)),
+            WslPresenceRecheck);
         _monitor = new SessionMonitor([local, wsl], () => _settings.GreenBeatsYellow);
 
         _pollTimer = NewTimer(PollInterval, RequestPoll);
@@ -58,7 +64,7 @@ public sealed class AppHost : IDisposable
         });
         _danceTimer = NewTimer(DanceInterval, () =>
         {
-            try { _dance.Tick(); } catch (Exception) { }
+            try { _dance.Tick(); } catch (Exception e) { Log.Error("Dance tick failed", e); }
             RaiseUpdated();
         });
     }
@@ -118,8 +124,9 @@ public sealed class AppHost : IDisposable
                 {
                     snapshot = await Task.Run(() => _monitor.Poll(DateTimeOffset.UtcNow));
                 }
-                catch (Exception)
+                catch (Exception e)
                 {
+                    Log.Error("Poll failed", e);
                     break; // SessionMonitor already isolates sources; next tick retries
                 }
                 if (_disposed) return;
@@ -155,8 +162,9 @@ public sealed class AppHost : IDisposable
         {
             Updated?.Invoke(Current);
         }
-        catch (Exception)
+        catch (Exception e)
         {
+            Log.Error("Updated subscriber failed", e);
         }
     }
 

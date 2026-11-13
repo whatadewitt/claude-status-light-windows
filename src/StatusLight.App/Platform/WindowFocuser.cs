@@ -69,7 +69,8 @@ public static class WindowFocuser
     /// </summary>
     private static bool Activate(nint hwnd)
     {
-        if (Win32.IsIconic(hwnd)) Win32.ShowWindow(hwnd, Win32.SW_RESTORE);
+        // Async: a hung target window must not block this (UI) thread.
+        if (Win32.IsIconic(hwnd)) Win32.ShowWindowAsync(hwnd, Win32.SW_RESTORE);
         if (Win32.SetForegroundWindow(hwnd) && Win32.GetForegroundWindow() == hwnd) return true;
 
         var foreground = Win32.GetForegroundWindow();

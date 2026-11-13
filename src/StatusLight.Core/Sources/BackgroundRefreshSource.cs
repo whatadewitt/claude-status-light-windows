@@ -10,7 +10,9 @@ namespace StatusLight.Core.Sources;
 /// Unchanged results — a throttled source returns the same list — and failures do not invoke it,
 /// so a callback that polls again cannot loop.
 /// </param>
-public sealed class BackgroundRefreshSource(ISessionSource inner, Action? refreshed = null) : ISessionSource
+/// <param name="onError">Invoked on the thread pool with an inner Poll failure (e.g. for logging); its own failures are ignored.</param>
+public sealed class BackgroundRefreshSource(
+    ISessionSource inner, Action? refreshed = null, Action<Exception>? onError = null) : ISessionSource
 {
     private volatile IReadOnlyList<SessionState> _cache = [];
     private int _inFlight;
@@ -31,9 +33,10 @@ public sealed class BackgroundRefreshSource(ISessionSource inner, Action? refres
             changed = !ReferenceEquals(result, _cache);
             _cache = result;
         }
-        catch (Exception)
+        catch (Exception e)
         {
             // Keep the previous cache; the next Poll starts a fresh refresh.
+            try { onError?.Invoke(e); } catch (Exception) { }
         }
         finally
         {

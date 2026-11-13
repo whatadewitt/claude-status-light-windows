@@ -1,4 +1,5 @@
 using System.IO;
+using System.Reflection;
 using StatusLight.App.Floating;
 using StatusLight.App.Platform;
 using StatusLight.App.Rendering;
@@ -38,8 +39,25 @@ public partial class App : Application
             return;
         }
 
+        Log.Info($"Claude Status Light {Version()} starting");
+
         // A tray app has no window to show an error in; never let one exception make the light vanish.
-        DispatcherUnhandledException += (_, args) => args.Handled = true;
+        DispatcherUnhandledException += (_, args) =>
+        {
+            Log.Error("Unhandled UI exception", args.Exception);
+            args.Handled = true;
+        };
+        // WinForms (tray menu) exceptions: log instead of showing the default error dialog. The mode
+        // must be set before the first WinForms control exists, i.e. before the tray is created.
+        try
+        {
+            System.Windows.Forms.Application.SetUnhandledExceptionMode(System.Windows.Forms.UnhandledExceptionMode.CatchException);
+        }
+        catch (InvalidOperationException ex)
+        {
+            Log.Error("SetUnhandledExceptionMode failed", ex);
+        }
+        System.Windows.Forms.Application.ThreadException += (_, args) => Log.Error("Unhandled WinForms exception", args.Exception);
 
         var store = _store = new SettingsStore(SettingsPath);
         _host = new AppHost(store, Dispatcher);
@@ -78,8 +96,14 @@ public partial class App : Application
             new StartupRegistration().Apply(s.StartAtLogin, exe);
             _startAtLogin = s.StartAtLogin; // a failed write is retried on the next settings change
         }
-        catch (Exception)
+        catch (Exception e)
         {
+            Log.Error("Start-at-login registration failed", e);
         }
     }
+
+    private static string Version() =>
+        typeof(App).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+        ?? typeof(App).Assembly.GetName().Version?.ToString()
+        ?? "unknown";
 }

@@ -31,6 +31,10 @@ public partial class SettingsWindow : Window
     {
         _host = host;
         _store = store;
+        // Follow the Windows light/dark app theme (Fluent). Only this window: the floating window themes itself.
+#pragma warning disable WPF0001 // ThemeMode is marked experimental
+        ThemeMode = System.Windows.ThemeMode.System;
+#pragma warning restore WPF0001
         InitializeComponent();
 
         foreach (var (_, label) in Corners) CornerBox.Items.Add(label);
