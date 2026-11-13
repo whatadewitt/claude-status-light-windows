@@ -51,4 +51,41 @@ public class ShellCommandsTests
     [InlineData("bash -c echo hi", false)]
     public void IsClaudeShellMatchesBothSlashForms(string line, bool expected)
         => Assert.Equal(expected, ShellCommands.IsClaudeShell(line));
+
+    [Fact]
+    public void ShellChildren_picks_direct_shell_children_only()
+    {
+        (int, int, string)[] rows =
+        [
+            (10, 1, "claude.exe"),
+            (11, 10, "bash.exe"),
+            (12, 10, "Node.exe"),
+            (13, 10, "PWSH.EXE"),
+            (14, 11, "sh.exe"),
+            (15, 10, "cmd"),
+            (16, 99, "bash.exe"),
+            (17, 10, "fish.exe"),
+            (18, 10, "conhost.exe"),
+        ];
+        Assert.Equal([11, 13, 15], ShellCommands.ShellChildren(rows, 10));
+    }
+
+    [Theory]
+    [InlineData("bash.exe")]
+    [InlineData("sh.exe")]
+    [InlineData("dash.exe")]
+    [InlineData("zsh.exe")]
+    [InlineData("cmd.exe")]
+    [InlineData("powershell.exe")]
+    [InlineData("pwsh.exe")]
+    public void ShellChildren_recognizes_each_shell(string exe)
+    {
+        Assert.Equal([2], ShellCommands.ShellChildren([(2, 1, exe)], 1));
+    }
+
+    [Fact]
+    public void ShellChildren_of_childless_pid_is_empty()
+    {
+        Assert.Empty(ShellCommands.ShellChildren([(2, 1, "bash.exe")], 5));
+    }
 }

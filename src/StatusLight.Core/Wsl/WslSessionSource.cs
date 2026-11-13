@@ -54,7 +54,8 @@ public sealed class WslSessionSource(ICommandRunner wsl, Func<string, string> un
             if (_retryAfter.TryGetValue(distro, out var retryAt) && now < retryAt) continue;
             if (!_homes.TryGetValue(distro, out var home))
             {
-                var r = wsl.Run(["-d", distro, "-e", "sh", "-c", "printf %s \"$HOME\""], CommandTimeout);
+                // No shell and no quoting, matching the installer's probe.
+                var r = wsl.Run(["-d", distro, "-e", "printenv", "HOME"], CommandTimeout);
                 home = r.ExitCode == 0 ? r.Stdout.Replace("\0", "").Trim() : "";
                 if (home.Length == 0) { _retryAfter[distro] = now + FailureBackoff; continue; } // don't cache failures
                 _homes[distro] = home;

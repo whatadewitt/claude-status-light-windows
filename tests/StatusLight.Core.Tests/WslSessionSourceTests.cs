@@ -25,7 +25,7 @@ public sealed class WslSessionSourceTests : IDisposable
             var joined = string.Join(' ', args);
             Calls.Add(joined);
             if (joined == "-l --running -q") return new(ListExit, Running);
-            if (joined.Contains("printf")) return new(HomeExit, Home);
+            if (joined.EndsWith(" -e printenv HOME", StringComparison.Ordinal)) return new(HomeExit, Home);
             if (joined.Contains(" ps ")) return new(PsExit, Ps);
             return new(1, "");
         }
@@ -52,6 +52,14 @@ public sealed class WslSessionSourceTests : IDisposable
         var r = new FakeRunner();
         Assert.Empty(Source(r).Poll(Now));
         Assert.Equal(["-l --running -q"], r.Calls);
+    }
+
+    [Fact]
+    public void Home_is_probed_without_a_shell_or_quotes()
+    {
+        var r = new FakeRunner { Running = "Ubuntu\n" };
+        Source(r).Poll(Now);
+        Assert.Equal(["-l --running -q", "-d Ubuntu -e printenv HOME"], r.Calls);
     }
 
     [Fact]
@@ -119,7 +127,7 @@ public sealed class WslSessionSourceTests : IDisposable
         var src = Source(r);
         src.Poll(Now);
         src.Poll(Now.AddSeconds(10));
-        Assert.Equal(1, r.Calls.Count(c => c.Contains("printf")));
+        Assert.Equal(1, r.Calls.Count(c => c.Contains("printenv HOME")));
     }
 
     [Fact]
@@ -144,7 +152,7 @@ public sealed class WslSessionSourceTests : IDisposable
         Assert.Empty(src.Poll(Now.AddSeconds(1)));
         r.ListExit = 0;
         src.Poll(Now.AddSeconds(2));
-        Assert.Equal(2, r.Calls.Count(c => c.Contains("printf")));
+        Assert.Equal(2, r.Calls.Count(c => c.Contains("printenv HOME")));
     }
 
     [Fact]
@@ -157,7 +165,7 @@ public sealed class WslSessionSourceTests : IDisposable
         src.Poll(Now.AddSeconds(1));
         r.Running = "Ubuntu\n";
         src.Poll(Now.AddSeconds(2));
-        Assert.Equal(2, r.Calls.Count(c => c.Contains("printf")));
+        Assert.Equal(2, r.Calls.Count(c => c.Contains("printenv HOME")));
     }
 
     [Fact]
@@ -167,9 +175,9 @@ public sealed class WslSessionSourceTests : IDisposable
         var src = Source(r);
         src.Poll(Now);
         src.Poll(Now.AddSeconds(10));
-        Assert.Equal(1, r.Calls.Count(c => c.Contains("printf")));
+        Assert.Equal(1, r.Calls.Count(c => c.Contains("printenv HOME")));
         src.Poll(Now.AddSeconds(31));
-        Assert.Equal(2, r.Calls.Count(c => c.Contains("printf")));
+        Assert.Equal(2, r.Calls.Count(c => c.Contains("printenv HOME")));
     }
 
     [Fact]
@@ -196,7 +204,7 @@ public sealed class WslSessionSourceTests : IDisposable
         src.Poll(Now.AddSeconds(1));
         r.Running = "Ubuntu\n";
         src.Poll(Now.AddSeconds(2));
-        Assert.Equal(2, r.Calls.Count(c => c.Contains("printf")));
+        Assert.Equal(2, r.Calls.Count(c => c.Contains("printenv HOME")));
     }
 
     [Fact]

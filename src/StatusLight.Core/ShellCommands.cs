@@ -9,6 +9,30 @@ public static class ShellCommands
     private const string SignatureSlash = ".claude/shell-snapshots/snapshot-";
     private const string SignatureBackslash = @".claude\shell-snapshots\snapshot-";
 
+    private static readonly HashSet<string> ShellProcessNames = new(StringComparer.Ordinal)
+    {
+        "bash", "sh", "dash", "zsh", "cmd", "powershell", "pwsh",
+    };
+
+    /// <summary>
+    /// Pids of the direct children of <paramref name="parentPid"/> whose executable is a shell
+    /// (the only processes whose command lines are worth fetching). <c>ExeFile</c> is the image
+    /// name as a process snapshot reports it, e.g. "bash.exe".
+    /// </summary>
+    public static IReadOnlyList<int> ShellChildren(
+        IEnumerable<(int Pid, int ParentPid, string ExeFile)> processes, int parentPid)
+    {
+        var result = new List<int>();
+        foreach (var (pid, ppid, exe) in processes)
+        {
+            if (ppid != parentPid || pid == parentPid) continue;
+            var name = exe.ToLowerInvariant();
+            if (name.EndsWith(".exe", StringComparison.Ordinal)) name = name[..^4];
+            if (ShellProcessNames.Contains(name)) result.Add(pid);
+        }
+        return result;
+    }
+
     public static bool IsClaudeShell(string commandLine)
         => commandLine.Contains(SignatureSlash, StringComparison.Ordinal)
            || commandLine.Contains(SignatureBackslash, StringComparison.Ordinal);

@@ -59,4 +59,21 @@ public sealed class WindowsProcessTableTests
             try { child.Kill(true); } catch (Exception) { }
         }
     }
+
+    [Fact]
+    public void Non_shell_children_are_not_reported()
+    {
+        var psi = new ProcessStartInfo("ping.exe", "-n 5 127.0.0.1") { CreateNoWindow = true };
+        using var child = Process.Start(psi)!;
+        try
+        {
+            Thread.Sleep(200);
+            Assert.DoesNotContain(_table.ChildCommandLines(Environment.ProcessId),
+                l => l.Contains("127.0.0.1", StringComparison.Ordinal));
+        }
+        finally
+        {
+            try { child.Kill(true); } catch (Exception) { }
+        }
+    }
 }
