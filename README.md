@@ -77,8 +77,8 @@ powershell -ExecutionPolicy Bypass -File scripts\uninstall.ps1
 ```
 
 This stops the app, removes start at login, removes the hooks from the Windows and WSL
-`settings.json` files, and deletes the WSL hook script, the install folder and
-`%USERPROFILE%\.claude\status-light\sessions`. It keeps your custom `icon.png` and the
+`settings.json` files, and deletes the WSL hook script and session files, the install folder
+and `%USERPROFILE%\.claude\status-light\sessions`. It keeps your custom `icon.png` and the
 app's preferences in `%APPDATA%\ClaudeStatusLight`.
 
 ## How it works
@@ -97,17 +97,20 @@ the Mac version. `status-hook.exe` is a tiny Native AOT program; it always exits
 never prints, so it can't slow down or break Claude Code.
 
 The tray app reads those files every second, drops sessions whose process has gone, and
-shows the most urgent state.
+shows the most urgent state. It logs startup and any errors it recovers from to
+`%LOCALAPPDATA%\ClaudeStatusLight\log.txt` (rolled to `log.1.txt` at about 1 MB).
 
 ## WSL notes
 
 - `install.ps1` installs the hook into every WSL distro that has a `~/.claude` folder
   (skipping `docker-desktop` distros): it writes `~/.claude/status-light/status-hook.sh`
   and merges its hooks into that distro's `~/.claude/settings.json`. If you set up Claude
-  Code in a new distro later, re-run `install.ps1`.
+  Code in a new distro later, re-run `install.ps1`. If `settings.json` is a symlink (e.g.
+  into your dotfiles), the installer resolves it inside the distro and edits the real file.
 - The app reads WSL sessions through `\\wsl.localhost\<distro>` every 3 seconds, and only
   for distros that are already running (`wsl -l --running`). It never starts a stopped
-  distro or keeps one awake.
+  distro or keeps one awake. On a machine with no WSL distro registered it doesn't poll WSL
+  at all (it checks again every minute).
 - Windows can't see Linux processes, so liveness comes from one `ps` call per poll in a
   distro that has session files.
 - Clicking a WSL session brings the most recently used Windows Terminal window forward

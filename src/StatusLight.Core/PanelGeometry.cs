@@ -1,6 +1,6 @@
 namespace StatusLight.Core;
 
-/// <summary>A rectangle in y-down screen coordinates (device-independent units in the app).</summary>
+/// <summary>A rectangle in y-down screen coordinates (physical pixels in the app, for window placement).</summary>
 public readonly record struct RectD(double X, double Y, double Width, double Height)
 {
     public double Right => X + Width;
@@ -97,11 +97,4 @@ public static class PanelGeometry
         ScreenCorner.BottomLeft => new RectD(work.X + margin, work.Bottom - h - margin, w, h),
         _ => new RectD(work.Right - w - margin, work.Bottom - h - margin, w, h),
     };
-
-    /// <summary>
-    /// Pop the panel out when a session starts waiting for input, not on every refresh while one
-    /// keeps waiting.
-    /// </summary>
-    public static bool ShouldPopOut(IReadOnlySet<string> waiting, IReadOnlySet<string> previouslyWaiting) =>
-        waiting.Any(id => !previouslyWaiting.Contains(id));
 }

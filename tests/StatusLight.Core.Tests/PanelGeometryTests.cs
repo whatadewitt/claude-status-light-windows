@@ -95,15 +95,6 @@ public sealed class PanelGeometryTests
     }
 
     [Fact]
-    public void Pops_out_only_for_newly_waiting_sessions()
-    {
-        Assert.True(PanelGeometry.ShouldPopOut(Set("a"), Set()));
-        Assert.False(PanelGeometry.ShouldPopOut(Set("a"), Set("a")));
-        Assert.True(PanelGeometry.ShouldPopOut(Set("a", "b"), Set("a")));
-        Assert.False(PanelGeometry.ShouldPopOut(Set(), Set("a")));
-    }
-
-    [Fact]
     public void RectD_bottom_is_y_plus_height()
     {
         var r = new RectD(10, 20, 30, 40);
@@ -176,6 +167,4 @@ public sealed class PanelGeometryTests
         Assert.Equal(new RectD(4180, 1200, 300, 200), spot.Rect);
         Assert.Equal(ScreenCorner.BottomRight, spot.Anchor);
     }
-
-    private static HashSet<string> Set(params string[] ids) => [.. ids];
 }
