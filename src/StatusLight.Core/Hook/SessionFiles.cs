@@ -47,6 +47,7 @@ public static class SessionFiles
             {
                 try
                 {
+                    if (OperatingSystem.IsWindows() && WindowsReplace.TryReplace(tmp, path)) return;
                     File.Move(tmp, path, overwrite: true);
                     return;
                 }
