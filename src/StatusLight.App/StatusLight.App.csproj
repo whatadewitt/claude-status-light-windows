@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <AssemblyName>ClaudeStatusLight</AssemblyName>
+    <RootNamespace>StatusLight.App</RootNamespace>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <!-- WPF hosts the process and reads DPI awareness (PerMonitorV2) only from the manifest;
+         WinForms' ApplicationHighDpiMode applies only via ApplicationConfiguration.Initialize, which a WPF app never runs. -->
+    <NoWarn>$(NoWarn);WFO0003</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="System.Management" Version="10.0.0" />
+    <ProjectReference Include="..\StatusLight.Core\StatusLight.Core.csproj" />
+  </ItemGroup>
+</Project>

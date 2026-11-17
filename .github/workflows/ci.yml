@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.x
+      - run: dotnet test tests/StatusLight.Core.Tests
+      - run: bash tests/wsl/hook_test.sh
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.x
+      - run: dotnet build StatusLight.slnx -c Release
+      # Same publish as the release, into out\ (the build the Pester tests install from).
+      - run: dotnet publish src/StatusLight.App -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o out
+      - run: dotnet publish src/StatusLight.Hook -c Release -r win-x64 -o out
+      - run: Copy-Item hooks/wsl/status-hook.sh out/
+        shell: pwsh
+      - run: dotnet test StatusLight.slnx -c Release
+      # The install scripts must work on both PowerShell 7 and Windows PowerShell 5.1.
+      - name: Pester (PowerShell 7)
+        shell: pwsh
+        run: |
+          Install-Module Pester -MinimumVersion 5.0.0 -Force -SkipPublisherCheck -Scope CurrentUser
+          Import-Module Pester -MinimumVersion 5.0.0
+          Invoke-Pester tests/scripts -CI -Output Detailed
+      - name: Pester (Windows PowerShell 5.1)
+        shell: powershell
+        run: |
+          [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+          Install-PackageProvider -Name NuGet -MinimumVersion 2.8.5.201 -Force -Scope CurrentUser | Out-Null
+          Install-Module Pester -MinimumVersion 5.0.0 -Force -SkipPublisherCheck -Scope CurrentUser
+          Import-Module Pester -MinimumVersion 5.0.0
+          Invoke-Pester tests/scripts -CI -Output Detailed

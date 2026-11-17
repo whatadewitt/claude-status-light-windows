@@ -1,0 +1,36 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.x
+      - run: dotnet test StatusLight.slnx -c Release
+      - run: dotnet publish src/StatusLight.App -c Release -r win-x64 --self-contained -p:PublishSingleFile=true -p:IncludeNativeLibrariesForSelfExtract=true -o out
+      - run: dotnet publish src/StatusLight.Hook -c Release -r win-x64 -o out
+      - name: Package
+        shell: pwsh
+        run: |
+          Copy-Item hooks/wsl/status-hook.sh out/
+          $asset = 'ClaudeStatusLight-win-x64.zip'
+          $files = 'ClaudeStatusLight.exe', 'status-hook.exe', 'status-hook.sh' | ForEach-Object { Join-Path out $_ }
+          Compress-Archive -Path $files -DestinationPath $asset
+          $hash = (Get-FileHash -LiteralPath $asset -Algorithm SHA256).Hash.ToLowerInvariant()
+          [IO.File]::WriteAllText((Join-Path $PWD "$asset.sha256"), "$hash  $asset`n")
+      - name: Create release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create $env:GITHUB_REF_NAME --generate-notes ClaudeStatusLight-win-x64.zip ClaudeStatusLight-win-x64.zip.sha256
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }

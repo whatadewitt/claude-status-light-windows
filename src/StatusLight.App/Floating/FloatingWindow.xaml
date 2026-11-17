@@ -1,0 +1,39 @@
+<Window x:Class="StatusLight.App.Floating.FloatingWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="Claude Status Light"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        ShowActivated="False"
+        ResizeMode="NoResize"
+        SizeToContent="Manual"
+        WindowStartupLocation="Manual"
+        Focusable="False"
+        UseLayoutRounding="True"
+        FontFamily="Segoe UI"
+        FontSize="12">
+    <Border CornerRadius="12"
+            BorderThickness="1"
+            Background="{DynamicResource PanelBackground}"
+            BorderBrush="{DynamicResource PanelBorder}"
+            TextElement.Foreground="{DynamicResource PanelForeground}">
+        <Grid>
+            <StackPanel x:Name="Full" Margin="12,10,12,10">
+                <!-- Transparent background makes the whole header row a drag handle. -->
+                <DockPanel x:Name="Header" Background="Transparent" LastChildFill="True">
+                    <Image x:Name="HeaderIcon" Width="20" Height="20" DockPanel.Dock="Left"
+                           RenderOptions.BitmapScalingMode="HighQuality" />
+                    <TextBlock x:Name="HeaderText" Margin="6,0,0,0" FontWeight="Bold"
+                               VerticalAlignment="Center" />
+                </DockPanel>
+                <StackPanel x:Name="Rows" Margin="0,6,0,0" />
+            </StackPanel>
+            <Image x:Name="TileIcon" Width="28" Height="28" Visibility="Collapsed"
+                   HorizontalAlignment="Center" VerticalAlignment="Center"
+                   RenderOptions.BitmapScalingMode="HighQuality" />
+        </Grid>
+    </Border>
+</Window>
