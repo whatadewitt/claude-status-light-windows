@@ -10,35 +10,32 @@
     <Window.Resources>
         <Style x:Key="Section" TargetType="TextBlock">
             <Setter Property="FontWeight" Value="Bold" />
-            <Setter Property="Foreground" Value="{x:Static SystemColors.GrayTextBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFillColorSecondaryBrush}" />
             <Setter Property="Margin" Value="0,0,0,6" />
         </Style>
-        <Style TargetType="CheckBox">
-            <Setter Property="Margin" Value="0,0,0,8" />
-        </Style>
-        <Style TargetType="Separator">
-            <Setter Property="Margin" Value="0,4,0,10" />
-        </Style>
+        <!-- No implicit (un-keyed) styles here: one without BasedOn replaces the Fluent theme's
+             style for that control, which reverts it to the classic look (black text in dark mode).
+             Margins are set per control instead. -->
     </Window.Resources>
     <StackPanel Margin="20" MinWidth="340">
         <TextBlock Text="Floating window" Style="{StaticResource Section}" />
-        <CheckBox x:Name="ShowFloatingBox" Content="Show floating window" />
+        <CheckBox x:Name="ShowFloatingBox" Margin="0,0,0,8" Content="Show floating window" />
         <StackPanel Orientation="Horizontal" Margin="0,0,0,8">
             <CheckBox x:Name="LockToCornerBox" Content="Lock to corner" Margin="0"
                       VerticalAlignment="Center" />
             <ComboBox x:Name="CornerBox" Margin="10,0,0,0" MinWidth="120" />
         </StackPanel>
-        <CheckBox x:Name="AutoHideBox" Content="Auto-hide — show only the mascot until hovered" />
+        <CheckBox x:Name="AutoHideBox" Margin="0,0,0,8" Content="Auto-hide — show only the mascot until hovered" />
 
-        <Separator />
+        <Separator Margin="0,4,0,10" />
         <TextBlock Text="Behavior" Style="{StaticResource Section}" />
-        <CheckBox x:Name="GreenBeatsYellowBox" Content="Done beats busy (green outranks yellow)" />
-        <CheckBox x:Name="StartAtLoginBox" Content="Start at login" />
+        <CheckBox x:Name="GreenBeatsYellowBox" Margin="0,0,0,8" Content="Done beats busy (green outranks yellow)" />
+        <CheckBox x:Name="StartAtLoginBox" Margin="0,0,0,8" Content="Start at login" />
 
-        <Separator />
+        <Separator Margin="0,4,0,10" />
         <TextBlock Text="Icon" Style="{StaticResource Section}" />
         <TextBlock TextWrapping="Wrap" MaxWidth="340" Margin="0,0,0,8"
-                   Foreground="{x:Static SystemColors.GrayTextBrush}"
+                   Foreground="{DynamicResource TextFillColorSecondaryBrush}"
                    Text="Drop an image at %USERPROFILE%\.claude\status-light\icon.png to use it as the icon; a colored status dot is added automatically." />
         <Button x:Name="RevealIconButton" Content="Reveal icon folder…" HorizontalAlignment="Left"
                 Padding="10,3" />
